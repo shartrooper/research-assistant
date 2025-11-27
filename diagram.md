@@ -2,21 +2,15 @@
 
 ```mermaid
 flowchart TD
-  P0["Phase 0: 
-  Minimal Event Loop 
-  Event queue 
-  Basic event structure
-  Core event loop 
-  Dispatcher"]
-  P1["Phase 1: Single Event Chain
-  Handlers emit new events\n- Single event → next event\n- Internal event generation\n- Basic decoupling"]
-  P2["Phase 2: Multi-Stage Pipeline\n- 3-step research pipeline\n- UserInputReceived → AnalysisRequested → SummaryRequested\n- Multi-event workflows\n- Event choreography\n- Pipeline design"]
-  P3["Phase 3: Finite State Machine (FSM)\n- FSM design\n- State transitions\n- Guard conditions\n- Event gating\n- IDLE → WAITING → ANALYZING → SUMMARIZING → RESPONDING"]
-  P4["Phase 4: Parallel Workers\n- Parallelism with workers\n- Fan-in / fan-out\n- Worker pools\n- Backpressure\n- Queue design\n- Concurrency-safe handling"]
-  P5["Phase 5: Time-Based Events\n- Timer-driven events\n- Heartbeat/tick events\n- Timeouts\n- Error & retry events"]
-  P6["Phase 6: Tool Integrations\n- Asynchronous I/O\n- Tool start/done/error events\n- Workflow orchestration\n- Service decoupling\n- External tools & APIs"]
-  P7["Phase 7: Artifact Generation\n- Task-specific workers\n- Event-driven document creation\n- Charts & visualizations\n- File outputs (JSON, CSV, etc.)\n- Artifact registry\n- Artifact error handling"]
-  F["Final Deliverable\n- Full event-driven system\n- Modular dispatching\n- Complete FSM\n- Parallel workers\n- Tool-integrated workflows\n- Time-based scheduling\n- Artifact creation & outputs\n- Scalable research agent"]
+  P0["Phase 0: Minimal Event Loop - Event queue - Basic event structure - Core event loop - Dispatcher"]
+  P1["Phase 1: Single Event Chain - Handlers emit new events - Single event → next event - Internal event generation - Basic decoupling"]
+  P2["Phase 2: Multi-Stage Pipeline - 3-step research pipeline - UserInputReceived → AnalysisRequested → SummaryRequested - Multi-event workflows - Event choreography - Pipeline design"]
+  P3["Phase 3: Finite State Machine (FSM) - FSM design - State transitions - Guard conditions - Event gating - IDLE → WAITING → ANALYZING → SUMMARIZING → RESPONDING"]
+  P4["Phase 4: Parallel Workers - Parallelism with workers - Fan-in / fan-out - Worker pools - Backpressure - Queue design - Concurrency-safe handling"]
+  P5["Phase 5: Time-Based Events - Timer-driven events - Heartbeat/tick events - Timeouts - Error & retry events"]
+  P6["Phase 6: Tool Integrations - Asynchronous I/O - Tool start/done/error events - Workflow orchestration - Service decoupling - External tools & APIs"]
+  P7["Phase 7: Artifact Generation - Task-specific workers - Event-driven document creation - Charts & visualizations - File outputs (JSON, CSV, etc.) - Artifact registry - Artifact error handling"]
+  F["Final Deliverable - Full event-driven system - Modular dispatching - Complete FSM - Parallel workers - Tool-integrated workflows - Time-based scheduling - Artifact creation & outputs - Scalable research agent"]
 
   P0 --> P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7 --> F
 ```
