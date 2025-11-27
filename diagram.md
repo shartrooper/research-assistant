@@ -8,7 +8,8 @@ flowchart TD
   Basic event structure
   Core event loop 
   Dispatcher"]
-  P1["Phase 1: Single Event Chain\n- Handlers emit new events\n- Single event → next event\n- Internal event generation\n- Basic decoupling"]
+  P1["Phase 1: Single Event Chain
+  Handlers emit new events\n- Single event → next event\n- Internal event generation\n- Basic decoupling"]
   P2["Phase 2: Multi-Stage Pipeline\n- 3-step research pipeline\n- UserInputReceived → AnalysisRequested → SummaryRequested\n- Multi-event workflows\n- Event choreography\n- Pipeline design"]
   P3["Phase 3: Finite State Machine (FSM)\n- FSM design\n- State transitions\n- Guard conditions\n- Event gating\n- IDLE → WAITING → ANALYZING → SUMMARIZING → RESPONDING"]
   P4["Phase 4: Parallel Workers\n- Parallelism with workers\n- Fan-in / fan-out\n- Worker pools\n- Backpressure\n- Queue design\n- Concurrency-safe handling"]
