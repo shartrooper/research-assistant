@@ -4,6 +4,8 @@ type EventType string
 
 const (
 	TypeHeartbeat EventType = "HEARTBEAT"
+	TypeLog       EventType = "LOG"
+	TypeError     EventType = "ERROR"
 )
 
 type Event struct {
@@ -11,3 +13,6 @@ type Event struct {
 	Data any
 }
 
+type Publisher interface {
+	Publish(Event)
+}
