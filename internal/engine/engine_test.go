@@ -12,7 +12,7 @@ func TestEngine_AsynchronousBursts(t *testing.T) {
 	var processedCount int64
 
 	// just counts events
-	handler := func(ev event.Event) {
+	handler := func(ev event.Event, p event.Publisher) {
 		atomic.AddInt64(&processedCount, 1)
 	}
 	en := New(100, handler)

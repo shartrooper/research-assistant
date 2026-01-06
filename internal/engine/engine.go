@@ -7,7 +7,7 @@ import (
 	"github.com/user/research-assistant/internal/event"
 )
 
-type Handler func(event.Event)
+type Handler func(event.Event, event.Publisher)
 
 type Engine struct {
 	eventQueue chan event.Event
@@ -47,7 +47,7 @@ func (e *Engine) Stop() {
 
 func (e *Engine) dispatch(ev event.Event) {
 	if e.handler != nil {
-		e.handler(ev)
+		e.handler(ev, e)
 		return
 	}
 
