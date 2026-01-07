@@ -10,7 +10,7 @@ import (
 
 func TestEngine_EventChaining(t *testing.T) {
 	var analysisStarted int64
-	var analysisFinished int64
+	var summaryFinished int64
 
 	// This handler demonstrates "Chaining"
 	// AnalysisRequested -> AnalysisComplete
@@ -20,11 +20,11 @@ func TestEngine_EventChaining(t *testing.T) {
 			atomic.AddInt64(&analysisStarted, 1)
 			// CHAIN: When analysis is requested, automatically publish a completion event
 			p.Publish(event.Event{
-				Type: event.TypeAnalysisComplete,
-				Data: "Analysis result",
+				Type: event.TypeSummaryComplete,
+				Data: "Summary result",
 			})
-		case event.TypeAnalysisComplete:
-			atomic.AddInt64(&analysisFinished, 1)
+		case event.TypeSummaryComplete:
+			atomic.AddInt64(&summaryFinished, 1)
 		}
 	}
 
@@ -46,7 +46,7 @@ func TestEngine_EventChaining(t *testing.T) {
 	if atomic.LoadInt64(&analysisStarted) != 1 {
 		t.Error("Chain failed: AnalysisRequested was never processed")
 	}
-	if atomic.LoadInt64(&analysisFinished) != 1 {
-		t.Error("Chain failed: AnalysisComplete was never triggered from the request")
+	if atomic.LoadInt64(&summaryFinished) != 1 {
+		t.Error("Chain failed: SummaryComplete was never triggered from the request")
 	}
 }
