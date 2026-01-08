@@ -9,16 +9,26 @@ import (
 
 type Handler func(event.Event, event.Publisher)
 
+type State string
+
+const (
+	StateIdle        State = "IDLE"
+	StateAnalyzing   State = "ANALYZING"
+	StateSummarizing State = "SUMMARIZING"
+)
+
 type Engine struct {
 	eventQueue chan event.Event
 	wg         sync.WaitGroup
 	handler    Handler
+	state      State
 }
 
 func New(bufferSize int, handler Handler) *Engine {
 	return &Engine{
 		eventQueue: make(chan event.Event, bufferSize),
 		handler:    handler,
+		state:      StateIdle,
 	}
 }
 
@@ -46,6 +56,36 @@ func (e *Engine) Stop() {
 }
 
 func (e *Engine) dispatch(ev event.Event) {
+	// --- THE BOUNCER (FSM) ---
+	switch e.state {
+	case StateIdle:
+		if ev.Type != event.TypeUserInputReceived && ev.Type != event.TypeHeartbeat {
+			fmt.Printf("[BOUNCER] Ignored %s: System is IDLE. Please start with User Input.\n", ev.Type)
+			return
+		}
+		if ev.Type == event.TypeUserInputReceived {
+			e.state = StateAnalyzing
+		}
+
+	case StateAnalyzing:
+		if ev.Type == event.TypeUserInputReceived {
+			fmt.Printf("[BOUNCER] Rejected %s: I am already ANALYZING something else!\n", ev.Type)
+			return
+		}
+		if ev.Type == event.TypeSummaryRequested {
+			e.state = StateSummarizing
+		}
+
+	case StateSummarizing:
+		if ev.Type == event.TypeUserInputReceived || ev.Type == event.TypeAnalysisRequested {
+			fmt.Printf("[BOUNCER] Rejected %s: I am busy SUMMARIZING!\n", ev.Type)
+			return
+		}
+		if ev.Type == event.TypeSummaryComplete {
+			e.state = StateIdle
+		}
+	}
+
 	if e.handler != nil {
 		e.handler(ev, e)
 		return

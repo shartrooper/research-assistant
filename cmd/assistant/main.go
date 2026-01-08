@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/user/research-assistant/internal/engine"
 	"github.com/user/research-assistant/internal/event"
@@ -24,7 +25,10 @@ func main() {
 
 		case event.TypeAnalysisRequested:
 			fmt.Printf("[2. ANALYSIS] Analyzing data for: %v\n", ev.Data)
-			// Simulating enrichment: adding "analyzed" context
+			// MOCK DELAY: Simulate a heavy process
+			fmt.Println("... (thinking for 2 seconds) ...")
+			time.Sleep(2 * time.Second)
+
 			analysisResult := fmt.Sprintf("Deep analysis of '%v'", ev.Data)
 			p.Publish(event.Event{
 				Type: event.TypeSummaryRequested,
@@ -52,10 +56,16 @@ func main() {
 
 	en.Start()
 
-	// Phase 2: Start the 3-step pipeline
+	// Phase 3: Test the Bouncer
 	en.Publish(event.Event{
 		Type: event.TypeUserInputReceived,
 		Data: "The future of Go concurrency",
+	})
+
+	// Spamming a second input immediately
+	en.Publish(event.Event{
+		Type: event.TypeUserInputReceived,
+		Data: "Spam query that should be rejected",
 	})
 
 	stop := make(chan os.Signal, 1)
