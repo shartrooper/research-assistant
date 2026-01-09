@@ -28,7 +28,7 @@ func TestEngine_FSMBouncer(t *testing.T) {
 		}
 	}
 
-	en := New(10, handler)
+	en := New(10, 1, 1, handler)
 	en.Start()
 
 	// 1. Send first input

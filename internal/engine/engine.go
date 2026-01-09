@@ -18,30 +18,37 @@ const (
 )
 
 type Engine struct {
-	eventQueue chan event.Event
-	wg         sync.WaitGroup
-	handler    Handler
-	state      State
+	eventQueue    chan event.Event
+	wg            sync.WaitGroup
+	handler       Handler
+	numWorkers    int
+	maxConcurrent int // Maximum number of simultaneous analysis tasks
+
+	mu             sync.Mutex
+	activeAnalyses int
 }
 
-func New(bufferSize int, handler Handler) *Engine {
+func New(bufferSize int, numWorkers int, maxConcurrent int, handler Handler) *Engine {
 	return &Engine{
-		eventQueue: make(chan event.Event, bufferSize),
-		handler:    handler,
-		state:      StateIdle,
+		eventQueue:     make(chan event.Event, bufferSize),
+		handler:        handler,
+		numWorkers:     numWorkers,
+		maxConcurrent:  maxConcurrent,
+		activeAnalyses: 0,
 	}
 }
 
-// background event loop
-
+// Start launches the worker pool
 func (e *Engine) Start() {
-	e.wg.Add(1)
-	go func() {
-		defer e.wg.Done()
-		for ev := range e.eventQueue {
-			e.dispatch(ev)
-		}
-	}()
+	for i := 0; i < e.numWorkers; i++ {
+		e.wg.Add(1)
+		go func(workerID int) {
+			defer e.wg.Done()
+			for ev := range e.eventQueue {
+				e.dispatch(ev, workerID)
+			}
+		}(i)
+	}
 }
 
 // Send an event to the queue
@@ -55,35 +62,32 @@ func (e *Engine) Stop() {
 	e.wg.Wait()
 }
 
-func (e *Engine) dispatch(ev event.Event) {
-	// --- THE BOUNCER (FSM) ---
-	switch e.state {
-	case StateIdle:
-		if ev.Type != event.TypeUserInputReceived && ev.Type != event.TypeHeartbeat {
-			fmt.Printf("[BOUNCER] Ignored %s: System is IDLE. Please start with User Input.\n", ev.Type)
+func (e *Engine) dispatch(ev event.Event, workerID int) {
+	// --- THE CONCURRENCY BOUNCER ---
+	if ev.Type == event.TypeUserInputReceived {
+		e.mu.Lock()
+		if e.activeAnalyses >= e.maxConcurrent {
+			fmt.Printf("[WORKER %d] Rejected %s: Capacity reached (%d/%d). Gemini API protection active.\n",
+				workerID, ev.Type, e.activeAnalyses, e.maxConcurrent)
+			e.mu.Unlock()
 			return
 		}
-		if ev.Type == event.TypeUserInputReceived {
-			e.state = StateAnalyzing
-		}
+		e.activeAnalyses++
+		fmt.Printf("[WORKER %d] Accepted %s: Capacity (%d/%d)\n",
+			workerID, ev.Type, e.activeAnalyses, e.maxConcurrent)
+		e.mu.Unlock()
+	}
 
-	case StateAnalyzing:
-		if ev.Type == event.TypeUserInputReceived {
-			fmt.Printf("[BOUNCER] Rejected %s: I am already ANALYZING something else!\n", ev.Type)
-			return
+	// Logic to decrement counter when a pipeline finishes
+	if ev.Type == event.TypeSummaryComplete {
+		e.mu.Lock()
+		e.activeAnalyses--
+		if e.activeAnalyses < 0 {
+			e.activeAnalyses = 0
 		}
-		if ev.Type == event.TypeSummaryRequested {
-			e.state = StateSummarizing
-		}
-
-	case StateSummarizing:
-		if ev.Type == event.TypeUserInputReceived || ev.Type == event.TypeAnalysisRequested {
-			fmt.Printf("[BOUNCER] Rejected %s: I am busy SUMMARIZING!\n", ev.Type)
-			return
-		}
-		if ev.Type == event.TypeSummaryComplete {
-			e.state = StateIdle
-		}
+		fmt.Printf("[WORKER %d] Finished task. Capacity now (%d/%d)\n",
+			workerID, e.activeAnalyses, e.maxConcurrent)
+		e.mu.Unlock()
 	}
 
 	if e.handler != nil {
@@ -93,8 +97,8 @@ func (e *Engine) dispatch(ev event.Event) {
 
 	switch ev.Type {
 	case event.TypeHeartbeat:
-		fmt.Printf("[ENGINE] %s: System heartbeat at %v\n", ev.Type, ev.Data)
+		fmt.Printf("[WORKER %d] %s: Heartbeat at %v\n", workerID, ev.Type, ev.Data)
 	default:
-		fmt.Printf("[ENGINE] Unknown event type: %s\n", ev.Type)
+		fmt.Printf("[WORKER %d] Unknown event type: %s\n", workerID, ev.Type)
 	}
 }

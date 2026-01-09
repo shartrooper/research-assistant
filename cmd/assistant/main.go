@@ -14,7 +14,9 @@ import (
 func main() {
 	fmt.Println("Starting Research Assistant...")
 
-	en := engine.New(32, func(ev event.Event, p event.Publisher) {
+	// Phase 4: Parallel Workers & Gemini API Protection
+	// 3 workers, but max 2 concurrent analyses
+	en := engine.New(32, 3, 2, func(ev event.Event, p event.Publisher) {
 		switch ev.Type {
 		case event.TypeUserInputReceived:
 			fmt.Printf("[1. INPUT] Processing prompt: %v\n", ev.Data)
@@ -56,17 +58,21 @@ func main() {
 
 	en.Start()
 
-	// Phase 3: Test the Bouncer
-	en.Publish(event.Event{
-		Type: event.TypeUserInputReceived,
-		Data: "The future of Go concurrency",
-	})
+	// Phase 4: Stress Test - Send 4 prompts
+	// With maxConcurrent=2, prompts 3 and 4 should be rejected
+	prompts := []string{
+		"The future of Go concurrency",
+		"How to build event-driven systems",
+		"Gemini API rate limiting strategies",
+		"Why are worker pools useful?",
+	}
 
-	// Spamming a second input immediately
-	en.Publish(event.Event{
-		Type: event.TypeUserInputReceived,
-		Data: "Spam query that should be rejected",
-	})
+	for _, p := range prompts {
+		en.Publish(event.Event{
+			Type: event.TypeUserInputReceived,
+			Data: p,
+		})
+	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)

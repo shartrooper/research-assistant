@@ -41,7 +41,7 @@ func TestEngine_Phase2Pipeline(t *testing.T) {
 		}
 	}
 
-	en := New(10, handler)
+	en := New(10, 1, 1, handler)
 	en.Start()
 
 	// Start the pipeline

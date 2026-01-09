@@ -15,7 +15,7 @@ func TestEngine_AsynchronousBursts(t *testing.T) {
 	handler := func(ev event.Event, p event.Publisher) {
 		atomic.AddInt64(&processedCount, 1)
 	}
-	en := New(100, handler)
+	en := New(100, 3, 10, handler)
 	en.Start()
 
 	// Parameters for the test
