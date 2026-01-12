@@ -3,21 +3,36 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/user/research-assistant/internal/config"
 	"github.com/user/research-assistant/internal/engine"
 	"github.com/user/research-assistant/internal/event"
+	"github.com/user/research-assistant/internal/llm"
 )
 
 func main() {
 	fmt.Println("Starting Research Assistant...")
 
+	// Load environment variables using the centralized utility
+	config.LoadEnv()
+
+	apiKey := config.GetRequiredEnv("GEMINI_API_KEY")
+
 	// Create a root context for the application
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Initialize Gemini Client
+	gemini, err := llm.NewGeminiClient(ctx, apiKey)
+	if err != nil {
+		log.Fatalf("Failed to initialize Gemini client: %v", err)
+	}
+	defer gemini.Close()
 
 	// Phase 4: Parallel Workers & Gemini API Protection
 	// 3 workers, but max 2 concurrent analyses
@@ -35,38 +50,42 @@ func main() {
 			})
 
 		case event.TypeAnalysisRequested:
-			fmt.Printf("[2. ANALYSIS] Analyzing data for: %v\n", ev.Data)
+			fmt.Printf("[2. ANALYSIS] Analyzing data using Gemini for: %v\n", ev.Data)
 
-			// PHASE 5: Context-based timeout
-			// We give each analysis a 1-second timeout
-			// (But our mock process takes 2 seconds)
-			analysisCtx, analysisCancel := context.WithTimeout(ctx, 1500*time.Millisecond)
-			defer analysisCancel()
-
-			// Run the analysis in a way that respects context
-			done := make(chan string)
+			// Run the analysis using Gemini asynchronously
 			go func() {
-				time.Sleep(2 * time.Second) // Mock work
-				done <- fmt.Sprintf("Deep analysis of '%v'", ev.Data)
-			}()
+				// PHASE 5: Context-based timeout
+				// We give each analysis a 90-second timeout for real API calls
+				// We create the context INSIDE the goroutine so it's not cancelled prematurely
+				analysisCtx, analysisCancel := context.WithTimeout(ctx, 90*time.Second)
+				defer analysisCancel()
 
-			select {
-			case result := <-done:
+				prompt := fmt.Sprintf("Analyze the following research topic and provide key insights: %v", ev.Data)
+				result, err := gemini.GenerateContent(analysisCtx, prompt)
+				if err != nil {
+					fmt.Printf("[! ERROR] Gemini analysis failed for '%v': %v\n", ev.Data, err)
+					p.Publish(event.Event{
+						Type: event.TypeError,
+						Data: err.Error(),
+					})
+					// Also trigger timeout recovery to free up capacity
+					p.Publish(event.Event{
+						Type: event.TypeTimeout,
+						Data: ev.Data,
+					})
+					return
+				}
+
 				p.Publish(event.Event{
 					Type: event.TypeSummaryRequested,
 					Data: result,
 				})
-			case <-analysisCtx.Done():
-				fmt.Printf("[! TIMEOUT] Analysis for '%v' exceeded time limit\n", ev.Data)
-				p.Publish(event.Event{
-					Type: event.TypeTimeout,
-					Data: ev.Data,
-				})
-			}
+			}()
 
 		case event.TypeSummaryRequested:
 			fmt.Printf("[3. SUMMARY] Summarizing results: %v\n", ev.Data)
-			summary := fmt.Sprintf("SUMMARY: This is the final report on [%v]", ev.Data)
+			// For now, we just pass through the Gemini result or wrap it
+			summary := fmt.Sprintf("SUMMARY REPORT:\n%v", ev.Data)
 			p.Publish(event.Event{
 				Type: event.TypeSummaryComplete,
 				Data: summary,
