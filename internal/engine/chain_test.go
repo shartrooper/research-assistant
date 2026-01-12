@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -29,7 +30,7 @@ func TestEngine_EventChaining(t *testing.T) {
 	}
 
 	en := New(10, 1, 1, handler)
-	en.Start()
+	en.Start(context.Background())
 
 	// 1. Publish the initial event
 	en.Publish(event.Event{

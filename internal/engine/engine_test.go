@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,7 +17,7 @@ func TestEngine_AsynchronousBursts(t *testing.T) {
 		atomic.AddInt64(&processedCount, 1)
 	}
 	en := New(100, 3, 10, handler)
-	en.Start()
+	en.Start(context.Background())
 
 	// Parameters for the test
 	numProducers := 5

@@ -10,6 +10,8 @@ const (
 	TypeAnalysisRequested EventType = "ANALYSIS_REQUESTED"
 	TypeSummaryRequested  EventType = "SUMMARY_REQUESTED"
 	TypeSummaryComplete   EventType = "SUMMARY_COMPLETE"
+	TypeTimeout           EventType = "TIMEOUT"
+	TypeTick              EventType = "TICK"
 )
 
 type Event struct {

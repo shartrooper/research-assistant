@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"sync/atomic"
 	"testing"
@@ -42,7 +43,7 @@ func TestEngine_Phase2Pipeline(t *testing.T) {
 	}
 
 	en := New(10, 1, 1, handler)
-	en.Start()
+	en.Start(context.Background())
 
 	// Start the pipeline
 	en.Publish(event.Event{

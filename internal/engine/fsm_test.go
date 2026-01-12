@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"sync/atomic"
 	"testing"
@@ -29,7 +30,7 @@ func TestEngine_FSMBouncer(t *testing.T) {
 	}
 
 	en := New(10, 1, 1, handler)
-	en.Start()
+	en.Start(context.Background())
 
 	// 1. Send first input
 	en.Publish(event.Event{Type: event.TypeUserInputReceived, Data: "Valid Task"})

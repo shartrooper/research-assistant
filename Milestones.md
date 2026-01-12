@@ -3,7 +3,7 @@
 This document describes a learn-by-building progression for constructing a fully event-driven research assistant agent in Go.
 Each phase introduces foundational event-driven development (EDD) concepts through incremental hands-on implementation.
 
-## Phase 0 — Minimal Event Loop (System Heartbeat)
+## Phase 0 — Minimal Event Loop (System Heartbeat) COMPLETED
 
 Goal
 
@@ -38,7 +38,7 @@ dispatch(ev)
 }
 }
 
-## Phase 1 — Single Event Chain (Fundamental Dispatching)
+## Phase 1 — Single Event Chain (Fundamental Dispatching) COMPLETED
 
 Goal
 
@@ -60,7 +60,7 @@ Milestone Code Concepts
 case EventUserInput:
 EventQueue <- Event{EventGenerateReply, "Processing..."}
 
-## Phase 2 — Multi-Stage Pipeline (Event Sequencing)
+## Phase 2 — Multi-Stage Pipeline (Event Sequencing) COMPLETED
 
 Goal
 
@@ -89,7 +89,7 @@ A fully functional event-driven sequence.
 Milestone Code Concepts
 UserInputReceived → AnalysisRequested → SummaryRequested → SummaryComplete
 
-## Phase 3 — Add Finite State Machine (FSM)
+## Phase 3 — Add Finite State Machine (FSM) COMPLETED
 
 Goal
 
@@ -117,7 +117,7 @@ if currentState != StateIdle && ev.Type == EventUserInput {
 // reject or buffer input
 }
 
-## Phase 4 — Parallel Workers (Concurrency & Fan-Out)
+## Phase 4 — Parallel Workers (Concurrency & Fan-Out) COMPLETED
 
 Goal
 
@@ -144,7 +144,7 @@ for i := 0; i < 4; i++ {
 go searchWorker(i)
 }
 
-## Phase 5 — Timers, Timeouts & Scheduled Events
+## Phase 5 — Timers, Timeouts & Scheduled Events COMPLETED
 
 Goal
 

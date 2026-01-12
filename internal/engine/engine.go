@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/user/research-assistant/internal/event"
 )
@@ -22,10 +24,11 @@ type Engine struct {
 	wg            sync.WaitGroup
 	handler       Handler
 	numWorkers    int
-	maxConcurrent int // Maximum number of simultaneous analysis tasks
+	maxConcurrent int
 
 	mu             sync.Mutex
 	activeAnalyses int
+	stopChan       chan struct{}
 }
 
 func New(bufferSize int, numWorkers int, maxConcurrent int, handler Handler) *Engine {
@@ -35,11 +38,13 @@ func New(bufferSize int, numWorkers int, maxConcurrent int, handler Handler) *En
 		numWorkers:     numWorkers,
 		maxConcurrent:  maxConcurrent,
 		activeAnalyses: 0,
+		stopChan:       make(chan struct{}),
 	}
 }
 
 // Start launches the worker pool
-func (e *Engine) Start() {
+func (e *Engine) Start(ctx context.Context) {
+	// 1. Start the worker pool
 	for i := 0; i < e.numWorkers; i++ {
 		e.wg.Add(1)
 		go func(workerID int) {
@@ -49,6 +54,20 @@ func (e *Engine) Start() {
 			}
 		}(i)
 	}
+
+	// 2. Start the system heartbeat ticker
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				e.Publish(event.Event{Type: event.TypeTick, Data: time.Now()})
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 }
 
 // Send an event to the queue
@@ -78,15 +97,19 @@ func (e *Engine) dispatch(ev event.Event, workerID int) {
 		e.mu.Unlock()
 	}
 
-	// Logic to decrement counter when a pipeline finishes
-	if ev.Type == event.TypeSummaryComplete {
+	// Logic to decrement counter when a pipeline finishes or times out
+	if ev.Type == event.TypeSummaryComplete || ev.Type == event.TypeTimeout {
 		e.mu.Lock()
 		e.activeAnalyses--
 		if e.activeAnalyses < 0 {
 			e.activeAnalyses = 0
 		}
-		fmt.Printf("[WORKER %d] Finished task. Capacity now (%d/%d)\n",
-			workerID, e.activeAnalyses, e.maxConcurrent)
+		reason := "Finished task"
+		if ev.Type == event.TypeTimeout {
+			reason = "Task timed out"
+		}
+		fmt.Printf("[WORKER %d] %s. Capacity now (%d/%d)\n", 
+			workerID, reason, e.activeAnalyses, e.maxConcurrent)
 		e.mu.Unlock()
 	}
 
