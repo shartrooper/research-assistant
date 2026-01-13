@@ -214,7 +214,39 @@ return
 EventQueue <- Event{EventSearchCompleted, results}
 }()
 
-## Phase 7 — Artifact Generation System (Documents, Charts, Files)
+## Phase 7 — Research Automation & Web Search COMPLETED
+
+Goal
+
+Extend the agent's capabilities by integrating real-time web search and autonomous information gathering.
+
+Concepts Introduced
+
+Collector pattern (waiting for multiple events)
+
+Search API integration (Serper, Tavily, etc.)
+
+Dynamic query generation
+
+Event-driven result aggregation
+
+Outcome
+
+The agent can independently search the web for multiple sub-topics, collect data, and synthesize a comprehensive answer based on fresh information.
+
+Milestone Code Concepts
+// LLM generates multiple search queries
+queries := []string{"topic A", "topic B"}
+for _, q := range queries {
+    EventQueue <- Event{SearchRequested, q}
+}
+
+// Collector logic (wait for N SearchCompleted events)
+if resultsReceived == totalQueriesExpected {
+    EventQueue <- Event{SynthesisRequested, allResults}
+}
+
+## Phase 8 — Artifact Generation System (Documents, Charts, Files)
 
 Goal
 
