@@ -16,6 +16,7 @@ import (
 	"github.com/user/research-assistant/internal/engine"
 	"github.com/user/research-assistant/internal/event"
 	"github.com/user/research-assistant/internal/llm"
+	"github.com/user/research-assistant/internal/search"
 )
 
 func main() {
@@ -25,7 +26,8 @@ func main() {
 	config.LoadEnv()
 
 	geminiKey := config.GetRequiredEnv("GEMINI_API_KEY")
-	tavilyKey := config.GetRequiredEnv("TAVILY_API_KEY")
+	cseKey := config.GetEnv("CSE_API_KEY", "")
+	cseCx := config.GetEnv("CSE_CX", "")
 
 	// Create a root context for the application
 	ctx, cancel := context.WithCancel(context.Background())
@@ -37,9 +39,6 @@ func main() {
 		log.Fatalf("Failed to initialize Gemini client: %v", err)
 	}
 	defer gemini.Close()
-
-	// Initialize Tavily Client
-	tavily := llm.NewTavilyClient(tavilyKey)
 
 	// Initialize Session Manager
 	sm := engine.NewSessionManager()
@@ -106,18 +105,32 @@ func main() {
 				searchCtx, searchCancel := context.WithTimeout(ctx, 30*time.Second)
 				defer searchCancel()
 
-				res, err := tavily.Search(searchCtx, req.Query)
-
 				response := event.SearchResponse{
 					SessionID: req.SessionID,
 					Query:     req.Query,
 				}
 
-				if err != nil {
-					response.Error = err
-				} else if len(res.Results) > 0 {
-					response.Content = res.Results[0].Content
-					response.URL = res.Results[0].URL
+				// Use Google CSE (required)
+				if cseKey == "" || cseCx == "" {
+					response.Error = fmt.Errorf("CSE not configured (set CSE_API_KEY and CSE_CX)")
+				} else {
+					results, err := search.SearchWeb(searchCtx, cseKey, cseCx, req.Query, search.Options{Num: 3})
+					if err != nil {
+						response.Error = err
+					} else if len(results) > 0 {
+						var contentBuilder strings.Builder
+						var links []string
+						for i, r := range results {
+							if r.Snippet != "" {
+								contentBuilder.WriteString(fmt.Sprintf("(%d) %s\n", i+1, r.Snippet))
+							}
+							if r.Link != "" {
+								links = append(links, r.Link)
+							}
+						}
+						response.Content = contentBuilder.String()
+						response.URL = strings.Join(links, " | ")
+					}
 				}
 
 				p.Publish(event.Event{
