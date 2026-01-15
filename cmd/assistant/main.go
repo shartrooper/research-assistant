@@ -209,10 +209,23 @@ Search Data:
 					return
 				}
 
+				// Generate an executive summary (short bullets)
+				summaryPrompt := fmt.Sprintf(`Create a short executive summary (3-5 bullet points) for the following report.
+Return plain text bullets.
+Report:
+%s`, result)
+
+				execSummary, err := gemini.GenerateContent(analysisCtx, summaryPrompt)
+				if err != nil {
+					fmt.Printf("[! ERROR] Gemini summary failed: %v\n", err)
+					execSummary = "Executive summary unavailable due to generation error."
+				}
+
 				p.Publish(event.Event{
 					Type: event.TypeSummaryRequested,
 					Data: event.SummaryPayload{
 						Topic:   agg.Topic,
+						Summary: execSummary,
 						Report:  result,
 						Sources: agg.Sources,
 					},
@@ -227,6 +240,7 @@ Search Data:
 				Type: event.TypeSummaryComplete,
 				Data: event.SummaryPayload{
 					Topic:   payload.Topic,
+					Summary: payload.Summary,
 					Report:  summary,
 					Sources: payload.Sources,
 				},
@@ -238,6 +252,7 @@ Search Data:
 
 			dir, err := artifacts.WriteBundle("artifacts", artifacts.Bundle{
 				Topic:   payload.Topic,
+				Summary: payload.Summary,
 				Report:  payload.Report,
 				Sources: payload.Sources,
 			})

@@ -14,6 +14,7 @@ import (
 
 type Bundle struct {
 	Topic   string              `json:"topic"`
+	Summary string              `json:"summary"`
 	Report  string              `json:"report"`
 	Sources []event.SearchSource `json:"sources"`
 }
@@ -53,6 +54,8 @@ func writeMarkdown(dir string, bundle Bundle) error {
 
 	_, _ = f.WriteString("# Research Report\n\n")
 	_, _ = f.WriteString(fmt.Sprintf("## Topic\n\n%s\n\n", bundle.Topic))
+	_, _ = f.WriteString("## Executive Summary\n\n")
+	_, _ = f.WriteString(bundle.Summary + "\n\n")
 	_, _ = f.WriteString("## Report\n\n")
 	_, _ = f.WriteString(bundle.Report + "\n\n")
 	_, _ = f.WriteString("## Sources\n\n")

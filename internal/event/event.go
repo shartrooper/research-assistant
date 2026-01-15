@@ -35,6 +35,7 @@ type SearchAggregate struct {
 
 type SummaryPayload struct {
 	Topic   string
+	Summary string
 	Report  string
 	Sources []SearchSource
 }
