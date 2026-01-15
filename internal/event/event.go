@@ -22,6 +22,23 @@ type Event struct {
 	Data any
 }
 
+type SearchSource struct {
+	Query   string
+	URL     string
+	Snippet string
+}
+
+type SearchAggregate struct {
+	Topic   string
+	Sources []SearchSource
+}
+
+type SummaryPayload struct {
+	Topic   string
+	Report  string
+	Sources []SearchSource
+}
+
 type SearchRequest struct {
 	SessionID string
 	Query     string

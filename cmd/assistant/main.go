@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/user/research-assistant/internal/artifacts"
 	"github.com/user/research-assistant/internal/config"
 	"github.com/user/research-assistant/internal/engine"
 	"github.com/user/research-assistant/internal/event"
@@ -155,19 +156,23 @@ func main() {
 			if session.AddResult(res) {
 				fmt.Printf("[SESSION %s] All searches complete. Starting analysis...\n", session.ID[:8])
 
-				// Aggregate context
-				var contextBuilder strings.Builder
-				contextBuilder.WriteString(fmt.Sprintf("Original Topic: %s\n\n", session.OriginalPrompt))
-				contextBuilder.WriteString("Research Findings:\n")
+				var sources []event.SearchSource
 				for _, r := range session.Results {
 					if r.Error == nil && r.Content != "" {
-						contextBuilder.WriteString(fmt.Sprintf("- Source: %s\n  Content: %s\n\n", r.URL, r.Content))
+						sources = append(sources, event.SearchSource{
+							Query:   r.Query,
+							URL:     r.URL,
+							Snippet: r.Content,
+						})
 					}
 				}
 
 				p.Publish(event.Event{
 					Type: event.TypeAnalysisRequested,
-					Data: contextBuilder.String(),
+					Data: event.SearchAggregate{
+						Topic:   session.OriginalPrompt,
+						Sources: sources,
+					},
 				})
 
 				// Clean up session
@@ -175,7 +180,7 @@ func main() {
 			}
 
 		case event.TypeAnalysisRequested:
-			contextData := ev.Data.(string)
+			agg := ev.Data.(event.SearchAggregate)
 			fmt.Printf("[3. ANALYSIS] Synthesizing research data...\n")
 
 			// Run the analysis using Gemini asynchronously
@@ -183,10 +188,16 @@ func main() {
 				analysisCtx, analysisCancel := context.WithTimeout(ctx, 90*time.Second)
 				defer analysisCancel()
 
-				prompt := fmt.Sprintf(`You are a research assistant. Based on the provided search results, create a comprehensive report on the topic. 
+				var sourceBuilder strings.Builder
+				for _, s := range agg.Sources {
+					sourceBuilder.WriteString(fmt.Sprintf("- Source: %s\n  Query: %s\n  Snippet: %s\n\n", s.URL, s.Query, s.Snippet))
+				}
+
+				prompt := fmt.Sprintf(`You are a research assistant. Based on the provided search results, create a comprehensive report on the topic.
 Include key insights, challenges, and a conclusion.
+Topic: %s
 Search Data:
-%s`, contextData)
+%s`, agg.Topic, sourceBuilder.String())
 
 				result, err := gemini.GenerateContent(analysisCtx, prompt)
 				if err != nil {
@@ -200,20 +211,41 @@ Search Data:
 
 				p.Publish(event.Event{
 					Type: event.TypeSummaryRequested,
-					Data: result,
+					Data: event.SummaryPayload{
+						Topic:   agg.Topic,
+						Report:  result,
+						Sources: agg.Sources,
+					},
 				})
 			}()
 
 		case event.TypeSummaryRequested:
 			fmt.Printf("[4. SUMMARY] Generating final report...\n")
-			summary := fmt.Sprintf("RESEARCH REPORT\n===============\n%v", ev.Data)
+			payload := ev.Data.(event.SummaryPayload)
+			summary := fmt.Sprintf("RESEARCH REPORT\n===============\n%s", payload.Report)
 			p.Publish(event.Event{
 				Type: event.TypeSummaryComplete,
-				Data: summary,
+				Data: event.SummaryPayload{
+					Topic:   payload.Topic,
+					Report:  summary,
+					Sources: payload.Sources,
+				},
 			})
 
 		case event.TypeSummaryComplete:
-			fmt.Printf("[4. COMPLETE] Output ready: %v\n", ev.Data)
+			payload := ev.Data.(event.SummaryPayload)
+			fmt.Printf("[4. COMPLETE] Output ready: %s\n", payload.Report)
+
+			dir, err := artifacts.WriteBundle("artifacts", artifacts.Bundle{
+				Topic:   payload.Topic,
+				Report:  payload.Report,
+				Sources: payload.Sources,
+			})
+			if err != nil {
+				fmt.Printf("[! ERROR] Failed to write artifacts: %v\n", err)
+				return
+			}
+			fmt.Printf("[ARTIFACTS] Written to %s\n", dir)
 
 		case event.TypeTimeout:
 			fmt.Printf("[RECOVERY] Cleaning up after timeout for: %v\n", ev.Data)
