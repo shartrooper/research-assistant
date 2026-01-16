@@ -13,8 +13,9 @@ const (
 	TypeTimeout           EventType = "TIMEOUT"
 	TypeTick              EventType = "TICK"
 
-	TypeSearchRequested EventType = "SEARCH_REQUESTED"
-	TypeSearchCompleted EventType = "SEARCH_COMPLETED"
+	TypeSearchRequested     EventType = "SEARCH_REQUESTED"
+	TypeSearchCompleted     EventType = "SEARCH_COMPLETED"
+	TypeStructuredDataReady EventType = "STRUCTURED_DATA_READY"
 )
 
 type Event struct {
@@ -34,10 +35,25 @@ type SearchAggregate struct {
 }
 
 type SummaryPayload struct {
-	Topic   string
-	Summary string
-	Report  string
-	Sources []SearchSource
+	Topic      string
+	Summary    string
+	Report     string
+	Sources    []SearchSource
+	Structured StructuredResearch
+}
+
+type StructuredFinding struct {
+	Finding      string   `json:"finding"`
+	EvidenceURLs []string `json:"evidence_urls"`
+	Confidence   float64  `json:"confidence"`
+}
+
+type StructuredResearch struct {
+	Topic         string              `json:"topic"`
+	KeyFindings   []StructuredFinding `json:"key_findings"`
+	Challenges    []string            `json:"challenges"`
+	OpenQuestions []string            `json:"open_questions"`
+	Sources       []SearchSource      `json:"sources"`
 }
 
 type SearchRequest struct {

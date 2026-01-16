@@ -193,13 +193,76 @@ func main() {
 					sourceBuilder.WriteString(fmt.Sprintf("- Source: %s\n  Query: %s\n  Snippet: %s\n\n", s.URL, s.Query, s.Snippet))
 				}
 
-				prompt := fmt.Sprintf(`You are a research assistant. Based on the provided search results, create a comprehensive report on the topic.
-Include key insights, challenges, and a conclusion.
+				structPrompt := fmt.Sprintf(`You are a research assistant. Convert the search results into the following JSON schema.
+Return ONLY valid JSON. No commentary. No markdown.
+
+Schema:
+{
+  "topic": "string",
+  "key_findings": [
+    {
+      "finding": "string",
+      "evidence_urls": ["string"],
+      "confidence": 0.0
+    }
+  ],
+  "challenges": ["string"],
+  "open_questions": ["string"],
+  "sources": [
+    {
+      "url": "string",
+      "query": "string",
+      "snippet": "string"
+    }
+  ]
+}
+
+Rules:
+- Use only the provided sources.
+- evidence_urls must be URLs from sources.
+- confidence ranges 0.0–1.0.
+- If unsure, reduce confidence and add an open question.
+
 Topic: %s
-Search Data:
+
+Sources:
 %s`, agg.Topic, sourceBuilder.String())
 
-				result, err := gemini.GenerateContent(analysisCtx, prompt)
+				rawStructured, err := gemini.GenerateContent(analysisCtx, structPrompt)
+				structured := event.StructuredResearch{
+					Topic:         agg.Topic,
+					Sources:       agg.Sources,
+					OpenQuestions: []string{"Structured extraction failed; using raw sources."},
+				}
+				if err != nil {
+					fmt.Printf("[! ERROR] Gemini structuring failed: %v\n", err)
+				} else if parsed, parseErr := parseStructuredResearch(rawStructured); parseErr == nil {
+					structured = parsed
+				} else {
+					fmt.Printf("[! ERROR] JSON parse failed: %v\n", parseErr)
+				}
+
+				p.Publish(event.Event{
+					Type: event.TypeStructuredDataReady,
+					Data: structured,
+				})
+			}()
+
+		case event.TypeStructuredDataReady:
+			structured := ev.Data.(event.StructuredResearch)
+			fmt.Printf("[3. STRUCTURED] Organizing findings...\n")
+
+			go func() {
+				analysisCtx, analysisCancel := context.WithTimeout(ctx, 90*time.Second)
+				defer analysisCancel()
+
+				structuredJSON, _ := json.MarshalIndent(structured, "", "  ")
+				reportPrompt := fmt.Sprintf(`You are a research assistant. Write a comprehensive report based only on the structured data below.
+Include key insights, challenges, and a conclusion.
+Structured Data:
+%s`, string(structuredJSON))
+
+				report, err := gemini.GenerateContent(analysisCtx, reportPrompt)
 				if err != nil {
 					fmt.Printf("[! ERROR] Gemini analysis failed: %v\n", err)
 					p.Publish(event.Event{
@@ -209,11 +272,10 @@ Search Data:
 					return
 				}
 
-				// Generate an executive summary (short bullets)
 				summaryPrompt := fmt.Sprintf(`Create a short executive summary (3-5 bullet points) for the following report.
 Return plain text bullets.
 Report:
-%s`, result)
+%s`, report)
 
 				execSummary, err := gemini.GenerateContent(analysisCtx, summaryPrompt)
 				if err != nil {
@@ -224,10 +286,11 @@ Report:
 				p.Publish(event.Event{
 					Type: event.TypeSummaryRequested,
 					Data: event.SummaryPayload{
-						Topic:   agg.Topic,
-						Summary: execSummary,
-						Report:  result,
-						Sources: agg.Sources,
+						Topic:      structured.Topic,
+						Summary:    execSummary,
+						Report:     report,
+						Sources:    structured.Sources,
+						Structured: structured,
 					},
 				})
 			}()
@@ -239,10 +302,11 @@ Report:
 			p.Publish(event.Event{
 				Type: event.TypeSummaryComplete,
 				Data: event.SummaryPayload{
-					Topic:   payload.Topic,
-					Summary: payload.Summary,
-					Report:  summary,
-					Sources: payload.Sources,
+					Topic:      payload.Topic,
+					Summary:    payload.Summary,
+					Report:     summary,
+					Sources:    payload.Sources,
+					Structured: payload.Structured,
 				},
 			})
 
@@ -251,10 +315,11 @@ Report:
 			fmt.Printf("[4. COMPLETE] Output ready: %s\n", payload.Report)
 
 			dir, err := artifacts.WriteBundle("artifacts", artifacts.Bundle{
-				Topic:   payload.Topic,
-				Summary: payload.Summary,
-				Report:  payload.Report,
-				Sources: payload.Sources,
+				Topic:      payload.Topic,
+				Summary:    payload.Summary,
+				Report:     payload.Report,
+				Sources:    payload.Sources,
+				Structured: payload.Structured,
 			})
 			if err != nil {
 				fmt.Printf("[! ERROR] Failed to write artifacts: %v\n", err)
@@ -298,4 +363,23 @@ Report:
 	fmt.Println("Shutting down...")
 	en.Stop()
 	fmt.Println("Shutdown complete")
+}
+
+func parseStructuredResearch(raw string) (event.StructuredResearch, error) {
+	cleaned := strings.TrimSpace(raw)
+	start := strings.Index(cleaned, "{")
+	end := strings.LastIndex(cleaned, "}")
+	if start == -1 || end == -1 || end <= start {
+		return event.StructuredResearch{}, fmt.Errorf("no json object found")
+	}
+
+	cleaned = cleaned[start : end+1]
+	var sr event.StructuredResearch
+	if err := json.Unmarshal([]byte(cleaned), &sr); err != nil {
+		return event.StructuredResearch{}, err
+	}
+	if sr.Topic == "" {
+		sr.Topic = "Unknown Topic"
+	}
+	return sr, nil
 }

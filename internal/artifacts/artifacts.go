@@ -13,10 +13,11 @@ import (
 )
 
 type Bundle struct {
-	Topic   string              `json:"topic"`
-	Summary string              `json:"summary"`
-	Report  string              `json:"report"`
-	Sources []event.SearchSource `json:"sources"`
+	Topic      string                   `json:"topic"`
+	Summary    string                   `json:"summary"`
+	Report     string                   `json:"report"`
+	Sources    []event.SearchSource     `json:"sources"`
+	Structured event.StructuredResearch `json:"structured"`
 }
 
 func WriteBundle(outputDir string, bundle Bundle) (string, error) {
@@ -53,15 +54,22 @@ func writeMarkdown(dir string, bundle Bundle) error {
 	defer f.Close()
 
 	_, _ = f.WriteString("# Research Report\n\n")
-	_, _ = f.WriteString(fmt.Sprintf("## Topic\n\n%s\n\n", bundle.Topic))
-	_, _ = f.WriteString("## Executive Summary\n\n")
-	_, _ = f.WriteString(bundle.Summary + "\n\n")
+	_, _ = fmt.Fprintf(f, "## Topic\n\n%s\n\n", bundle.Topic)
+	_, _ = fmt.Fprintf(f, "## Executive Summary\n\n%s\n\n", bundle.Summary)
+	_, _ = fmt.Fprintf(f, "## Report\n\n%s\n\n", bundle.Report)
 	_, _ = f.WriteString("## Report\n\n")
 	_, _ = f.WriteString(bundle.Report + "\n\n")
+	if len(bundle.Structured.KeyFindings) > 0 {
+		_, _ = f.WriteString("## Key Findings\n\n")
+		for _, k := range bundle.Structured.KeyFindings {
+			_, _ = fmt.Fprintf(f, "- %s (confidence: %.2f)\n", k.Finding, k.Confidence)
+		}
+		_, _ = f.WriteString("\n")
+	}
 	_, _ = f.WriteString("## Sources\n\n")
 	for i, s := range bundle.Sources {
-		_, _ = f.WriteString(fmt.Sprintf("%d. %s\n   - Query: %s\n   - Snippet: %s\n\n",
-			i+1, s.URL, s.Query, s.Snippet))
+		_, _ = fmt.Fprintf(f, "%d. %s\n   - Query: %s\n   - Snippet: %s\n\n",
+			i+1, s.URL, s.Query, s.Snippet)
 	}
 
 	return nil
