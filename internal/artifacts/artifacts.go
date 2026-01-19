@@ -38,6 +38,9 @@ func WriteBundle(outputDir string, bundle Bundle) (string, error) {
 	if err := writeJSON(baseDir, bundle); err != nil {
 		return baseDir, err
 	}
+	if err := writeStructuredJSON(baseDir, bundle); err != nil {
+		return baseDir, err
+	}
 	if err := writeCSV(baseDir, bundle); err != nil {
 		return baseDir, err
 	}
@@ -57,8 +60,6 @@ func writeMarkdown(dir string, bundle Bundle) error {
 	_, _ = fmt.Fprintf(f, "## Topic\n\n%s\n\n", bundle.Topic)
 	_, _ = fmt.Fprintf(f, "## Executive Summary\n\n%s\n\n", bundle.Summary)
 	_, _ = fmt.Fprintf(f, "## Report\n\n%s\n\n", bundle.Report)
-	_, _ = f.WriteString("## Report\n\n")
-	_, _ = f.WriteString(bundle.Report + "\n\n")
 	if len(bundle.Structured.KeyFindings) > 0 {
 		_, _ = f.WriteString("## Key Findings\n\n")
 		for _, k := range bundle.Structured.KeyFindings {
@@ -87,6 +88,22 @@ func writeJSON(dir string, bundle Bundle) error {
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(bundle); err != nil {
 		return fmt.Errorf("encode json: %w", err)
+	}
+	return nil
+}
+
+func writeStructuredJSON(dir string, bundle Bundle) error {
+	filePath := filepath.Join(dir, "structured.json")
+	f, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("write structured json: %w", err)
+	}
+	defer f.Close()
+
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(bundle.Structured); err != nil {
+		return fmt.Errorf("encode structured json: %w", err)
 	}
 	return nil
 }

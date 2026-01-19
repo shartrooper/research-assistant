@@ -312,7 +312,7 @@ Report:
 
 		case event.TypeSummaryComplete:
 			payload := ev.Data.(event.SummaryPayload)
-			fmt.Printf("[4. COMPLETE] Output ready: %s\n", payload.Report)
+			fmt.Printf("[4. COMPLETE] Output ready.\n")
 
 			dir, err := artifacts.WriteBundle("artifacts", artifacts.Bundle{
 				Topic:      payload.Topic,
@@ -381,5 +381,41 @@ func parseStructuredResearch(raw string) (event.StructuredResearch, error) {
 	if sr.Topic == "" {
 		sr.Topic = "Unknown Topic"
 	}
+	validateStructuredResearch(&sr)
 	return sr, nil
+}
+
+func validateStructuredResearch(sr *event.StructuredResearch) {
+	sourceSet := make(map[string]struct{}, len(sr.Sources))
+	for i := range sr.Sources {
+		s := &sr.Sources[i]
+		s.URL = strings.TrimSpace(s.URL)
+		s.Query = strings.TrimSpace(s.Query)
+		s.Snippet = strings.TrimSpace(s.Snippet)
+		if s.URL != "" {
+			sourceSet[s.URL] = struct{}{}
+		}
+	}
+
+	for i := range sr.KeyFindings {
+		f := &sr.KeyFindings[i]
+		f.Finding = strings.TrimSpace(f.Finding)
+		if f.Confidence < 0 {
+			f.Confidence = 0
+		}
+		if f.Confidence > 1 {
+			f.Confidence = 1
+		}
+		if len(sourceSet) == 0 {
+			continue
+		}
+		filtered := make([]string, 0, len(f.EvidenceURLs))
+		for _, u := range f.EvidenceURLs {
+			u = strings.TrimSpace(u)
+			if _, ok := sourceSet[u]; ok {
+				filtered = append(filtered, u)
+			}
+		}
+		f.EvidenceURLs = filtered
+	}
 }
