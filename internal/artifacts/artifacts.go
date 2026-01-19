@@ -66,6 +66,9 @@ func writeMarkdown(dir string, bundle Bundle) error {
 			_, _ = fmt.Fprintf(f, "- %s (confidence: %.2f)\n", k.Finding, k.Confidence)
 		}
 		_, _ = f.WriteString("\n")
+	} else if strings.TrimSpace(bundle.Structured.Error) != "" {
+		_, _ = f.WriteString("## Notice\n\n")
+		_, _ = fmt.Fprintf(f, "Structured output error: %s\n\n", bundle.Structured.Error)
 	}
 	_, _ = f.WriteString("## Sources\n\n")
 	for i, s := range bundle.Sources {

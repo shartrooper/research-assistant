@@ -214,7 +214,8 @@ Schema:
       "query": "string",
       "snippet": "string"
     }
-  ]
+  ],
+  "error": "string"
 }
 
 Rules:
@@ -222,6 +223,8 @@ Rules:
 - evidence_urls must be URLs from sources.
 - confidence ranges 0.0–1.0.
 - If unsure, reduce confidence and add an open question.
+- If the topic is gibberish, unsafe, disallowed, or cannot be meaningfully researched, set "error" to a short explanation and return empty arrays for key_findings/challenges/open_questions/sources.
+- Unsafe/disallowed examples: making bombs, domestic terrorism, suicide assistance, or any other harmful instructions.
 
 Topic: %s
 
@@ -233,6 +236,7 @@ Sources:
 					Topic:         agg.Topic,
 					Sources:       agg.Sources,
 					OpenQuestions: []string{"Structured extraction failed; using raw sources."},
+					Error:         "",
 				}
 				if err != nil {
 					fmt.Printf("[! ERROR] Gemini structuring failed: %v\n", err)
@@ -255,6 +259,21 @@ Sources:
 			go func() {
 				analysisCtx, analysisCancel := context.WithTimeout(ctx, 90*time.Second)
 				defer analysisCancel()
+
+				if strings.TrimSpace(structured.Error) != "" {
+					message := fmt.Sprintf("Unable to perform research for this topic: %s", structured.Error)
+					p.Publish(event.Event{
+						Type: event.TypeSummaryRequested,
+						Data: event.SummaryPayload{
+							Topic:      structured.Topic,
+							Summary:    message,
+							Report:     message,
+							Sources:    structured.Sources,
+							Structured: structured,
+						},
+					})
+					return
+				}
 
 				structuredJSON, _ := json.MarshalIndent(structured, "", "  ")
 				reportPrompt := fmt.Sprintf(`You are a research assistant. Write a comprehensive report based only on the structured data below.
@@ -380,6 +399,12 @@ func parseStructuredResearch(raw string) (event.StructuredResearch, error) {
 	}
 	if sr.Topic == "" {
 		sr.Topic = "Unknown Topic"
+	}
+	if sr.Error != "" {
+		sr.KeyFindings = nil
+		sr.Challenges = nil
+		sr.OpenQuestions = nil
+		sr.Sources = nil
 	}
 	validateStructuredResearch(&sr)
 	return sr, nil

@@ -54,6 +54,7 @@ type StructuredResearch struct {
 	Challenges    []string            `json:"challenges"`
 	OpenQuestions []string            `json:"open_questions"`
 	Sources       []SearchSource      `json:"sources"`
+	Error         string              `json:"error"`
 }
 
 type SearchRequest struct {
