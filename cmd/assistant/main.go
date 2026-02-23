@@ -18,6 +18,7 @@ import (
 	"github.com/user/research-assistant/internal/event"
 	"github.com/user/research-assistant/internal/llm"
 	"github.com/user/research-assistant/internal/search"
+	"github.com/user/research-assistant/internal/storage"
 )
 
 func main() {
@@ -43,6 +44,23 @@ func main() {
 
 	// Initialize Session Manager
 	sm := engine.NewSessionManager()
+
+	// Initialize Storage
+	// Ensure data directory exists
+	if err := os.MkdirAll("data", 0755); err != nil {
+		log.Fatalf("Failed to create data dir: %v", err)
+	}
+	
+	dbStore, err := storage.NewSQLiteStore("data/research.db")
+	if err != nil {
+		log.Fatalf("Failed to init SQLite store: %v", err)
+	}
+	defer dbStore.Close()
+
+	blobStore, err := storage.NewDiskBlobStore("artifacts")
+	if err != nil {
+		log.Fatalf("Failed to init Blob store: %v", err)
+	}
 
 	// Phase 4: Parallel Workers & Gemini API Protection
 	// 3 workers, but max 2 concurrent analyses
@@ -84,6 +102,11 @@ func main() {
 
 				sessionID := uuid.New().String()
 				sm.CreateSession(sessionID, fmt.Sprintf("%v", ev.Data), len(queries))
+
+				// Persist session to DB
+				if err := dbStore.CreateSession(sessionID, fmt.Sprintf("%v", ev.Data)); err != nil {
+					fmt.Printf("[! ERROR] Failed to create DB session: %v\n", err)
+				}
 
 				fmt.Printf("[SESSION %s] Initiating %d searches...\n", sessionID[:8], len(queries))
 
@@ -170,8 +193,9 @@ func main() {
 				p.Publish(event.Event{
 					Type: event.TypeAnalysisRequested,
 					Data: event.SearchAggregate{
-						Topic:   session.OriginalPrompt,
-						Sources: sources,
+						SessionID: session.ID,
+						Topic:     session.OriginalPrompt,
+						Sources:   sources,
 					},
 				})
 
@@ -233,6 +257,7 @@ Sources:
 
 				rawStructured, err := gemini.GenerateContent(analysisCtx, structPrompt)
 				structured := event.StructuredResearch{
+					SessionID:     agg.SessionID,
 					Topic:         agg.Topic,
 					Sources:       agg.Sources,
 					OpenQuestions: []string{"Structured extraction failed; using raw sources."},
@@ -245,6 +270,7 @@ Sources:
 				} else {
 					fmt.Printf("[! ERROR] JSON parse failed: %v\n", parseErr)
 				}
+				structured.SessionID = agg.SessionID
 
 				p.Publish(event.Event{
 					Type: event.TypeStructuredDataReady,
@@ -265,6 +291,7 @@ Sources:
 					p.Publish(event.Event{
 						Type: event.TypeSummaryRequested,
 						Data: event.SummaryPayload{
+							SessionID:  structured.SessionID,
 							Topic:      structured.Topic,
 							Summary:    message,
 							Report:     message,
@@ -305,6 +332,7 @@ Report:
 				p.Publish(event.Event{
 					Type: event.TypeSummaryRequested,
 					Data: event.SummaryPayload{
+						SessionID:  structured.SessionID,
 						Topic:      structured.Topic,
 						Summary:    execSummary,
 						Report:     report,
@@ -321,6 +349,7 @@ Report:
 			p.Publish(event.Event{
 				Type: event.TypeSummaryComplete,
 				Data: event.SummaryPayload{
+					SessionID:  payload.SessionID,
 					Topic:      payload.Topic,
 					Summary:    payload.Summary,
 					Report:     summary,
@@ -331,20 +360,54 @@ Report:
 
 		case event.TypeSummaryComplete:
 			payload := ev.Data.(event.SummaryPayload)
-			fmt.Printf("[4. COMPLETE] Output ready.\n")
+			fmt.Printf("[4. COMPLETE] Output ready. Persisting artifacts...\n")
 
-			dir, err := artifacts.WriteBundle("artifacts", artifacts.Bundle{
+			// 1. Save Blobs
+			reportMDKey, err := blobStore.SaveBlob("report", []byte(payload.Report), "md")
+			if err != nil {
+				fmt.Printf("[! ERROR] Save report.md: %v\n", err)
+			}
+			
+			// Reconstruct bundle for JSON blob to match legacy format
+			bundle := artifacts.Bundle{
 				Topic:      payload.Topic,
 				Summary:    payload.Summary,
 				Report:     payload.Report,
 				Sources:    payload.Sources,
 				Structured: payload.Structured,
-			})
-			if err != nil {
-				fmt.Printf("[! ERROR] Failed to write artifacts: %v\n", err)
-				return
 			}
-			fmt.Printf("[ARTIFACTS] Written to %s\n", dir)
+			bundleJSON, _ := json.MarshalIndent(bundle, "", "  ")
+			reportJSONKey, err := blobStore.SaveBlob("report", bundleJSON, "json")
+			if err != nil {
+				fmt.Printf("[! ERROR] Save report.json: %v\n", err)
+			}
+
+			// 2. Save Structured Data to DB
+			if payload.SessionID != "" {
+				// Findings
+				if err := dbStore.SaveFindings(payload.SessionID, payload.Structured.KeyFindings); err != nil {
+					fmt.Printf("[! ERROR] Save findings: %v\n", err)
+				}
+				// Open Questions
+				if err := dbStore.SaveOpenQuestions(payload.SessionID, payload.Structured.OpenQuestions); err != nil {
+					fmt.Printf("[! ERROR] Save questions: %v\n", err)
+				}
+				// Sources
+				if err := dbStore.SaveSources(payload.SessionID, payload.Sources); err != nil {
+					fmt.Printf("[! ERROR] Save sources: %v\n", err)
+				}
+				// Mark Complete
+				if err := dbStore.MarkSessionComplete(payload.SessionID, reportMDKey, reportJSONKey); err != nil {
+					fmt.Printf("[! ERROR] Mark session complete: %v\n", err)
+				} else {
+					fmt.Printf("[DB] Session %s marked complete.\n", payload.SessionID)
+				}
+			} else {
+				fmt.Printf("[! WARNING] No SessionID in payload, skipping DB persistence.\n")
+			}
+
+			fmt.Printf("[ARTIFACTS] Blobs written: %s, %s\n", reportMDKey, reportJSONKey)
+
 
 		case event.TypeTimeout:
 			fmt.Printf("[RECOVERY] Cleaning up after timeout for: %v\n", ev.Data)

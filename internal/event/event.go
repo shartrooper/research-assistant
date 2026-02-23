@@ -30,11 +30,13 @@ type SearchSource struct {
 }
 
 type SearchAggregate struct {
-	Topic   string
-	Sources []SearchSource
+	SessionID string
+	Topic     string
+	Sources   []SearchSource
 }
 
 type SummaryPayload struct {
+	SessionID  string
 	Topic      string
 	Summary    string
 	Report     string
@@ -49,6 +51,7 @@ type StructuredFinding struct {
 }
 
 type StructuredResearch struct {
+	SessionID     string              `json:"session_id"`
 	Topic         string              `json:"topic"`
 	KeyFindings   []StructuredFinding `json:"key_findings"`
 	Challenges    []string            `json:"challenges"`
