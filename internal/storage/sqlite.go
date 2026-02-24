@@ -40,11 +40,11 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("ping sqlite: %w", err)
 	}
 
-	if isNew {
-		if _, err := db.Exec(schemaSQL); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("apply schema: %w", err)
-		}
+	// Schema uses IF NOT EXISTS so this is safe to run on existing databases.
+	_ = isNew
+	if _, err := db.Exec(schemaSQL); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("apply schema: %w", err)
 	}
 
 	return &SQLiteStore{db: db}, nil
@@ -141,6 +141,50 @@ func (s *SQLiteStore) SaveSources(sessionID string, sources []event.SearchSource
 	}
 
 	return tx.Commit()
+}
+
+// GetKeyFindings retrieves all key findings for the given session.
+func (s *SQLiteStore) GetKeyFindings(sessionID string) ([]event.StructuredFinding, error) {
+	rows, err := s.db.Query(
+		`SELECT finding, confidence FROM key_findings WHERE session_id = ? ORDER BY id`,
+		sessionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query key_findings: %w", err)
+	}
+	defer rows.Close()
+
+	var findings []event.StructuredFinding
+	for rows.Next() {
+		var f event.StructuredFinding
+		if err := rows.Scan(&f.Finding, &f.Confidence); err != nil {
+			return nil, fmt.Errorf("scan finding: %w", err)
+		}
+		findings = append(findings, f)
+	}
+	return findings, rows.Err()
+}
+
+// GetSources retrieves all sources for the given session.
+func (s *SQLiteStore) GetSources(sessionID string) ([]event.SearchSource, error) {
+	rows, err := s.db.Query(
+		`SELECT query, url, COALESCE(snippet, '') FROM sources WHERE session_id = ? ORDER BY id`,
+		sessionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query sources: %w", err)
+	}
+	defer rows.Close()
+
+	var sources []event.SearchSource
+	for rows.Next() {
+		var src event.SearchSource
+		if err := rows.Scan(&src.Query, &src.URL, &src.Snippet); err != nil {
+			return nil, fmt.Errorf("scan source: %w", err)
+		}
+		sources = append(sources, src)
+	}
+	return sources, rows.Err()
 }
 
 func (s *SQLiteStore) MarkSessionComplete(id, reportKey, jsonKey string) error {

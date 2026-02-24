@@ -1,5 +1,5 @@
 -- Research sessions (one per user query)
-CREATE TABLE research_sessions (
+CREATE TABLE IF NOT EXISTS research_sessions (
     id              TEXT PRIMARY KEY,
     topic           TEXT NOT NULL,
     status          TEXT NOT NULL, -- queued | searching | structuring | writing | complete | failed
@@ -11,7 +11,7 @@ CREATE TABLE research_sessions (
 );
 
 -- Key findings from StructuredResearch
-CREATE TABLE key_findings (
+CREATE TABLE IF NOT EXISTS key_findings (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id  TEXT NOT NULL REFERENCES research_sessions(id),
     finding     TEXT NOT NULL,
@@ -19,18 +19,17 @@ CREATE TABLE key_findings (
 );
 
 -- Open questions from StructuredResearch
-CREATE TABLE open_questions (
+CREATE TABLE IF NOT EXISTS open_questions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id  TEXT NOT NULL REFERENCES research_sessions(id),
     question    TEXT NOT NULL
 );
 
 -- Sources (replaces sources.csv)
-CREATE TABLE sources (
+CREATE TABLE IF NOT EXISTS sources (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     session_id  TEXT NOT NULL REFERENCES research_sessions(id),
     query       TEXT NOT NULL,
     url         TEXT NOT NULL,
     snippet     TEXT
 );
-
