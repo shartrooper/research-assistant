@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	defaultAddr         = ":8080"
+	defaultAddr          = ":8080"
 	defaultResearcherURL = "http://localhost:8081"
 )
 
@@ -51,9 +51,9 @@ func main() {
 
 	// Build the ResearchStream function that calls the Researcher A2A agent.
 	researcherCard := &a2a.AgentCard{
-		URL:             researcherURL,
+		URL:                researcherURL,
 		PreferredTransport: a2a.TransportProtocol("JSONRPC"),
-		ProtocolVersion: "0.2.2",
+		ProtocolVersion:    "0.2.2",
 	}
 	researchStream := func(sctx context.Context, topic string) iter.Seq2[a2a.Event, error] {
 		return func(yield func(a2a.Event, error) bool) {
@@ -75,12 +75,12 @@ func main() {
 	exec := concierge.New(gemini, dbStore, researchStream)
 
 	card := &a2a.AgentCard{
-		Name:            "Research Assistant — Concierge",
-		Description:     "User-facing research agent: accepts research topics, coordinates with the Researcher, relays live status updates, and answers follow-up questions grounded in completed research.",
-		URL:             "http://localhost" + addr,
-		Version:         "0.1.0",
-		ProtocolVersion: "0.2.2",
-		Capabilities:    a2a.AgentCapabilities{Streaming: true},
+		Name:               "Research Assistant — Concierge",
+		Description:        "User-facing research agent: accepts research topics, coordinates with the Researcher, relays live status updates, and answers follow-up questions grounded in completed research.",
+		URL:                "http://localhost" + addr,
+		Version:            "0.1.0",
+		ProtocolVersion:    "0.2.2",
+		Capabilities:       a2a.AgentCapabilities{Streaming: true},
 		DefaultInputModes:  []string{"text/plain"},
 		DefaultOutputModes: []string{"text/plain", "application/json"},
 		Skills: []a2a.AgentSkill{

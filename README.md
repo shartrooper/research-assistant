@@ -145,9 +145,10 @@ curl -s -X POST http://localhost:8080 \
     "method": "message/send",
     "params": {
       "message": {
+        "kind": "message",
         "messageId": "msg-1",
         "role": "user",
-        "parts": [{"text": "The future of Go concurrency"}]
+        "parts": [{"kind": "text", "text": "The future of Go concurrency"}]
       }
     }
   }'
