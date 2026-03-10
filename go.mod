@@ -10,6 +10,8 @@ require (
 	google.golang.org/api v0.259.0
 )
 
+require github.com/gorilla/websocket v1.5.3
+
 require (
 	cloud.google.com/go v0.115.0 // indirect
 	cloud.google.com/go/ai v0.8.0 // indirect

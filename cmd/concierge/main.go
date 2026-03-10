@@ -104,6 +104,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
 	mux.Handle("/", a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(exec)))
+	mux.HandleFunc("/ws", concierge.HandleWebSocket(a2asrv.NewHandler(exec)))
 
 	srv := &http.Server{Addr: addr, Handler: mux}
 
