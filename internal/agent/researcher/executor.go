@@ -10,6 +10,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/google/uuid"
+	"github.com/user/research-assistant/internal/event"
 	"github.com/user/research-assistant/internal/pipeline"
 )
 
@@ -18,14 +19,20 @@ type PipelineRunner interface {
 	RunWithUpdates(ctx context.Context, sessionID, topic string, onUpdate func(status, detail string)) (*pipeline.Result, error)
 }
 
+// EventPublisher defines how the agent broadcasts transient status events.
+type EventPublisher interface {
+	PublishEvent(ctx context.Context, contextID string, ev event.Event) error
+}
+
 // Executor implements a2asrv.AgentExecutor for the Researcher agent.
 type Executor struct {
 	pipeline PipelineRunner
+	pub      EventPublisher
 }
 
-// New creates an Executor backed by the given PipelineRunner.
-func New(pl PipelineRunner) *Executor {
-	return &Executor{pipeline: pl}
+// New creates an Executor backed by the given PipelineRunner and EventPublisher.
+func New(pl PipelineRunner, pub EventPublisher) *Executor {
+	return &Executor{pipeline: pl, pub: pub}
 }
 
 // Execute runs the research pipeline for the topic extracted from the incoming
@@ -39,6 +46,28 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 	sessionID := uuid.New().String()
 
 	result, pipeErr := e.pipeline.RunWithUpdates(ctx, sessionID, topic, func(status, detail string) {
+		// Map internal status to event type for PubSub
+		var evType event.EventType
+		switch status {
+		case "searching":
+			evType = event.TypeSearchRequested
+		case "structuring":
+			evType = event.TypeStructuredDataReady
+		case "writing_report":
+			evType = event.TypeSummaryRequested
+		case "failed":
+			evType = event.TypeError
+		case "complete":
+			evType = event.TypeSummaryComplete
+		}
+
+		if evType != "" && e.pub != nil && reqCtx.ContextID != "" {
+			_ = e.pub.PublishEvent(ctx, reqCtx.ContextID, event.Event{
+				Type: evType,
+				Data: detail,
+			})
+		}
+
 		switch status {
 		case "searching":
 			msg := "Searching: " + detail

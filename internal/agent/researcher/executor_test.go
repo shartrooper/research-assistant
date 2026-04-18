@@ -11,12 +11,29 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/user/research-assistant/internal/agent/researcher"
+	"github.com/user/research-assistant/internal/event"
 	"github.com/user/research-assistant/internal/pipeline"
 )
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
+
+// mockPublisher captures events published by the executor.
+type mockPublisher struct {
+	mu     sync.Mutex
+	events map[string][]event.Event
+}
+
+func (m *mockPublisher) PublishEvent(_ context.Context, contextID string, ev event.Event) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.events == nil {
+		m.events = make(map[string][]event.Event)
+	}
+	m.events[contextID] = append(m.events[contextID], ev)
+	return nil
+}
 
 // mockPipeline drives onUpdate with a fixed sequence then returns result/err.
 type mockPipeline struct {
@@ -105,7 +122,7 @@ func TestResearcherExecutor_StreamsWorkingUpdates(t *testing.T) {
 		result: &pipeline.Result{ReportMDKey: "report-key.md", ReportJSONKey: "report-key.json"},
 	}
 
-	exec := researcher.New(mock)
+	exec := researcher.New(mock, &mockPublisher{})
 	q := &recordingQueue{}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -151,7 +168,7 @@ func TestResearcherExecutor_CompletesWithArtifact(t *testing.T) {
 		},
 	}
 
-	exec := researcher.New(mock)
+	exec := researcher.New(mock, &mockPublisher{})
 	q := &recordingQueue{}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -206,7 +223,7 @@ func TestResearcherExecutor_FailsOnPipelineError(t *testing.T) {
 		err: fmt.Errorf("gemini quota exceeded"),
 	}
 
-	exec := researcher.New(mock)
+	exec := researcher.New(mock, &mockPublisher{})
 	q := &recordingQueue{}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

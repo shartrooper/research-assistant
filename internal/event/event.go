@@ -23,6 +23,13 @@ type Event struct {
 	Data any
 }
 
+// StatusUpdate represents a transient status message for the frontend.
+type StatusUpdate struct {
+	Kind    string    `json:"kind"` // always "status"
+	Type    EventType `json:"type"`
+	Message string    `json:"message"`
+}
+
 type SearchSource struct {
 	Query   string
 	URL     string

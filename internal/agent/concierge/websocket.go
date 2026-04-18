@@ -3,12 +3,15 @@ package concierge
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/gorilla/websocket"
+	"github.com/user/research-assistant/internal/config"
+	"github.com/user/research-assistant/internal/pubsub"
 )
 
 var upgrader = websocket.Upgrader{
@@ -25,6 +28,12 @@ type wsJSONRequest struct {
 	Params  json.RawMessage `json:"params"`
 }
 
+// wsParams captures standard A2A params plus the extra contextId.
+type wsParams struct {
+	a2a.MessageSendParams
+	ContextID string `json:"contextId"`
+}
+
 // wsJSONResponse resembles the JSON-RPC response or stream event.
 type wsJSONResponse struct {
 	JSONRPC string `json:"jsonrpc"`
@@ -35,6 +44,11 @@ type wsJSONResponse struct {
 
 // HandleWebSocket upgrades the HTTP connection and bridges JSON to the A2A Executor.
 func HandleWebSocket(handler a2asrv.RequestHandler) http.HandlerFunc {
+	// Initialize Redis for pubsub
+	addr := config.GetEnv("REDIS_ADDR", "localhost:6379")
+	password := config.GetEnv("REDIS_PASSWORD", "")
+	ps := pubsub.NewRedisPubSub(addr, password)
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -69,21 +83,46 @@ func HandleWebSocket(handler a2asrv.RequestHandler) http.HandlerFunc {
 				continue
 			}
 
-			var params *a2a.MessageSendParams
+			var params wsParams
 			if err := json.Unmarshal(req.Params, &params); err != nil {
 				sendWSError(conn, req.ID, -32602, "Invalid params")
 				continue
 			}
 
 			go func() {
+				// Inject ContextID into call context
 				ctx, callCtx := a2asrv.WithCallContext(context.Background(), a2asrv.NewRequestMeta(r.Header))
+				if params.ContextID != "" {
+					callCtx.ContextID = params.ContextID
+					callCtx.TaskID = a2a.TaskID(fmt.Sprintf("task-%s", params.ContextID))
+				}
 
-				// Re-route context/task IDs properly for the server (v0.3.7 extension headers via meta)
-				// Setup basic call context properties if needed
-				_ = callCtx
+				// Start Redis listener for this context
+				if params.ContextID != "" {
+					redisCtx, cancelRedis := context.WithCancel(ctx)
+					defer cancelRedis()
+
+					eventCh, err := ps.SubscribeEvents(redisCtx, params.ContextID)
+					if err == nil {
+						go func() {
+							for ev := range eventCh {
+								resp := wsJSONResponse{
+									JSONRPC: "2.0",
+									ID:      req.ID,
+									Result: event.StatusUpdate{
+										Kind:    "status",
+										Type:    ev.Type,
+										Message: fmt.Sprintf("%v", ev.Data),
+									},
+								}
+								_ = conn.WriteJSON(resp)
+							}
+						}()
+					}
+				}
 
 				if req.Method == "message/stream" {
-					for ev, err := range handler.OnSendMessageStream(ctx, params) {
+					for ev, err := range handler.OnSendMessageStream(ctx, &params.MessageSendParams) {
 						if err != nil {
 							sendWSError(conn, req.ID, -32000, err.Error())
 							return
@@ -96,7 +135,7 @@ func HandleWebSocket(handler a2asrv.RequestHandler) http.HandlerFunc {
 						_ = conn.WriteJSON(resp)
 					}
 				} else {
-					result, err := handler.OnSendMessage(ctx, params)
+					result, err := handler.OnSendMessage(ctx, &params.MessageSendParams)
 					if err != nil {
 						sendWSError(conn, req.ID, -32000, err.Error())
 						return

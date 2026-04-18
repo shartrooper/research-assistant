@@ -16,6 +16,7 @@ import (
 	"github.com/user/research-assistant/internal/config"
 	"github.com/user/research-assistant/internal/llm"
 	"github.com/user/research-assistant/internal/pipeline"
+	"github.com/user/research-assistant/internal/pubsub"
 	"github.com/user/research-assistant/internal/search"
 	"github.com/user/research-assistant/internal/storage"
 )
@@ -29,6 +30,11 @@ func main() {
 	geminiKey := config.GetRequiredEnv("GEMINI_API_KEY")
 	cseKey := config.GetEnv("CSE_API_KEY", "")
 	cseCx := config.GetEnv("CSE_CX", "")
+
+	// Redis for real-time events
+	redisAddr := config.GetEnv("REDIS_ADDR", "localhost:6379")
+	redisPassword := config.GetEnv("REDIS_PASSWORD", "")
+	ps := pubsub.NewRedisPubSub(redisAddr, redisPassword)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -73,7 +79,7 @@ func main() {
 	}
 
 	pl := pipeline.New(gemini, searchFn, dbStore, blobStore)
-	exec := researcher.New(pl)
+	exec := researcher.New(pl, ps)
 
 	card := &a2a.AgentCard{
 		Name:            "Research Assistant — Researcher",
