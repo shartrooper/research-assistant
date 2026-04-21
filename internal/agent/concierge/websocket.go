@@ -11,6 +11,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/gorilla/websocket"
 	"github.com/user/research-assistant/internal/config"
+	"github.com/user/research-assistant/internal/event"
 	"github.com/user/research-assistant/internal/pubsub"
 )
 
@@ -90,11 +91,11 @@ func HandleWebSocket(handler a2asrv.RequestHandler) http.HandlerFunc {
 			}
 
 			go func() {
-				// Inject ContextID into call context
-				ctx, callCtx := a2asrv.WithCallContext(context.Background(), a2asrv.NewRequestMeta(r.Header))
+				// Inject ContextID into the message so the framework builds RequestContext correctly.
+				ctx, _ := a2asrv.WithCallContext(context.Background(), a2asrv.NewRequestMeta(r.Header))
 				if params.ContextID != "" {
-					callCtx.ContextID = params.ContextID
-					callCtx.TaskID = a2a.TaskID(fmt.Sprintf("task-%s", params.ContextID))
+					params.Message.ContextID = params.ContextID
+					params.Message.TaskID = a2a.TaskID(fmt.Sprintf("task-%s", params.ContextID))
 				}
 
 				// Start Redis listener for this context
