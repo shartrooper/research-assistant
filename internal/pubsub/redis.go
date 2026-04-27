@@ -22,6 +22,10 @@ func NewRedisPubSub(addr, password string) *RedisPubSub {
 	return &RedisPubSub{client: rdb}
 }
 
+func (ps *RedisPubSub) Ping(ctx context.Context) error {
+	return ps.client.Ping(ctx).Err()
+}
+
 func (ps *RedisPubSub) PublishEvent(ctx context.Context, contextID string, ev event.Event) error {
 	payload, err := json.Marshal(ev)
 	if err != nil {

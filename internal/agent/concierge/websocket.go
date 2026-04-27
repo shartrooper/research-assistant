@@ -10,7 +10,6 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/gorilla/websocket"
-	"github.com/user/research-assistant/internal/config"
 	"github.com/user/research-assistant/internal/event"
 	"github.com/user/research-assistant/internal/pubsub"
 )
@@ -44,12 +43,7 @@ type wsJSONResponse struct {
 }
 
 // HandleWebSocket upgrades the HTTP connection and bridges JSON to the A2A Executor.
-func HandleWebSocket(handler a2asrv.RequestHandler) http.HandlerFunc {
-	// Initialize Redis for pubsub
-	addr := config.GetEnv("REDIS_ADDR", "localhost:6379")
-	password := config.GetEnv("REDIS_PASSWORD", "")
-	ps := pubsub.NewRedisPubSub(addr, password)
-
+func HandleWebSocket(handler a2asrv.RequestHandler, ps *pubsub.RedisPubSub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
@@ -91,11 +85,9 @@ func HandleWebSocket(handler a2asrv.RequestHandler) http.HandlerFunc {
 			}
 
 			go func() {
-				// Inject ContextID into the message so the framework builds RequestContext correctly.
 				ctx, _ := a2asrv.WithCallContext(context.Background(), a2asrv.NewRequestMeta(r.Header))
 				if params.ContextID != "" {
 					params.Message.ContextID = params.ContextID
-					params.Message.TaskID = a2a.TaskID(fmt.Sprintf("task-%s", params.ContextID))
 				}
 
 				// Start Redis listener for this context

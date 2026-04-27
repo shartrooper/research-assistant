@@ -16,6 +16,7 @@ import (
 	"github.com/user/research-assistant/internal/agent/concierge"
 	"github.com/user/research-assistant/internal/config"
 	"github.com/user/research-assistant/internal/llm"
+	"github.com/user/research-assistant/internal/pubsub"
 	"github.com/user/research-assistant/internal/storage"
 )
 
@@ -48,6 +49,15 @@ func main() {
 		log.Fatalf("[CONCIERGE] Failed to init SQLite store: %v", err)
 	}
 	defer dbStore.Close()
+
+	// Initialize Redis for pubsub and health check
+	redisAddr := config.GetEnv("REDIS_ADDR", "localhost:6379")
+	redisPassword := config.GetEnv("REDIS_PASSWORD", "")
+	ps := pubsub.NewRedisPubSub(redisAddr, redisPassword)
+	if err := ps.Ping(ctx); err != nil {
+		log.Fatalf("[CONCIERGE] Redis health check failed: %v", err)
+	}
+	log.Printf("[CONCIERGE] Redis health check passed at %s", redisAddr)
 
 	// Build the ResearchStream function that calls the Researcher A2A agent.
 	researcherCard := &a2a.AgentCard{
@@ -104,7 +114,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
 	mux.Handle("/", a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(exec)))
-	mux.HandleFunc("/ws", concierge.HandleWebSocket(a2asrv.NewHandler(exec)))
+	mux.HandleFunc("/ws", concierge.HandleWebSocket(a2asrv.NewHandler(exec), ps))
 
 	srv := &http.Server{Addr: addr, Handler: mux}
 
