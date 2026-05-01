@@ -18,7 +18,7 @@ func TestSearchWeb_Integration(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	results, err := SearchWeb(ctx, apiKey, cx, "Go 1.24 release features", Options{Num: 3, Safe: "off"})
+	results, err := ContentWebSearch(ctx, apiKey, cx, "Go 1.24 release features", Options{Num: 3, Safe: "off"})
 	fmt.Println(results)
 
 	if err != nil {

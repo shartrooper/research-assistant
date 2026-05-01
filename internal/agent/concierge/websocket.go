@@ -50,7 +50,12 @@ func HandleWebSocket(handler a2asrv.RequestHandler, ps event.Subscriber) http.Ha
 			log.Printf("[WS] Upgrade error: %v", err)
 			return
 		}
-		defer conn.Close()
+		defer func(conn *websocket.Conn) {
+			err := conn.Close()
+			if err != nil {
+
+			}
+		}(conn)
 
 		// Mutex to protect concurrent writes to the websocket connection.
 		var mu sync.Mutex
@@ -196,16 +201,4 @@ func HandleWebSocket(handler a2asrv.RequestHandler, ps event.Subscriber) http.Ha
 			}()
 		}
 	}
-}
-
-func sendWSError(conn *websocket.Conn, id string, code int, message string) {
-	resp := wsJSONResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Error: map[string]any{
-			"code":    code,
-			"message": message,
-		},
-	}
-	_ = conn.WriteJSON(resp)
 }

@@ -13,12 +13,6 @@ type Handler func(event.Event, event.Publisher)
 
 type State string
 
-const (
-	StateIdle        State = "IDLE"
-	StateAnalyzing   State = "ANALYZING"
-	StateSummarizing State = "SUMMARIZING"
-)
-
 type Engine struct {
 	eventQueue    chan event.Event
 	wg            sync.WaitGroup
@@ -70,12 +64,12 @@ func (e *Engine) Start(ctx context.Context) {
 	}()
 }
 
-// Send an event to the queue
+// Publish Send an event to the queue
 func (e *Engine) Publish(ev event.Event) {
 	e.eventQueue <- ev
 }
 
-// closing the queue and wait for all events to be processed
+// Stop closing the queue and wait for all events to be processed
 func (e *Engine) Stop() {
 	close(e.eventQueue)
 	e.wg.Wait()
@@ -108,7 +102,7 @@ func (e *Engine) dispatch(ev event.Event, workerID int) {
 		if ev.Type == event.TypeTimeout {
 			reason = "Task timed out"
 		}
-		fmt.Printf("[WORKER %d] %s. Capacity now (%d/%d)\n", 
+		fmt.Printf("[WORKER %d] %s. Capacity now (%d/%d)\n",
 			workerID, reason, e.activeAnalyses, e.maxConcurrent)
 		e.mu.Unlock()
 	}

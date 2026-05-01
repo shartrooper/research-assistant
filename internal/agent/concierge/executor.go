@@ -233,20 +233,6 @@ func extractText(msg *a2a.Message) string {
 	return strings.TrimSpace(sb.String())
 }
 
-func extractSessionID(ev *a2a.TaskStatusUpdateEvent) string {
-	if ev.Status.Message == nil {
-		return ""
-	}
-	for _, p := range ev.Status.Message.Parts {
-		if dp, ok := p.(a2a.DataPart); ok {
-			if id, ok := dp.Data["session_id"].(string); ok {
-				return id
-			}
-		}
-	}
-	return ""
-}
-
 func writeStatus(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue, state a2a.TaskState, text string, final bool) error {
 	var msg *a2a.Message
 	if text != "" {

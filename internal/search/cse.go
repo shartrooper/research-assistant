@@ -15,17 +15,17 @@ type Options struct {
 	Num  int    // max results 1-10
 }
 
-type SearchResult struct {
+type ContentResult struct {
 	Title   string `json:"title"`
 	Link    string `json:"link"`
 	Snippet string `json:"snippet"`
 }
 
-type SearchResponse struct {
-	Items []SearchResult `json:"items"`
+type ContentResponse struct {
+	Items []ContentResult `json:"items"`
 }
 
-func SearchWeb(ctx context.Context, apiKey, cx, query string, opts Options) ([]SearchResult, error) {
+func ContentWebSearch(ctx context.Context, apiKey, cx, query string, opts Options) ([]ContentResult, error) {
 	if strings.TrimSpace(apiKey) == "" || strings.TrimSpace(cx) == "" {
 		return nil, fmt.Errorf("missing CSE key or cx")
 	}
@@ -58,7 +58,7 @@ func SearchWeb(ctx context.Context, apiKey, cx, query string, opts Options) ([]S
 		return nil, fmt.Errorf("cse http %d", resp.StatusCode)
 	}
 
-	var sr SearchResponse
+	var sr ContentResponse
 	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
 		return nil, err
 	}

@@ -83,7 +83,7 @@ var _ eventqueue.Queue = (*recordingQueue)(nil)
 
 func makeReqCtx(topic string) *a2asrv.RequestContext {
 	return &a2asrv.RequestContext{
-		TaskID:    a2a.TaskID("test-task-id"),
+		TaskID:    "test-task-id",
 		ContextID: "test-context-id",
 		Message: a2a.NewMessage(
 			a2a.MessageRoleUser,

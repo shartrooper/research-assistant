@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -63,7 +64,7 @@ func main() {
 		if cseKey == "" || cseCx == "" {
 			return nil, fmt.Errorf("CSE not configured (set CSE_API_KEY and CSE_CX)")
 		}
-		items, err := search.SearchWeb(sctx, cseKey, cseCx, query, search.Options{Num: 3})
+		items, err := search.ContentWebSearch(sctx, cseKey, cseCx, query, search.Options{Num: 3})
 		if err != nil {
 			return nil, err
 		}
@@ -82,12 +83,12 @@ func main() {
 	exec := researcher.New(pl, ps)
 
 	card := &a2a.AgentCard{
-		Name:            "Research Assistant — Researcher",
-		Description:     "Runs the full research pipeline for a given topic: query generation, parallel web search, LLM structuring, report writing, and artifact persistence.",
-		URL:             "http://localhost" + addr,
-		Version:         "0.1.0",
-		ProtocolVersion: "0.2.2",
-		Capabilities:    a2a.AgentCapabilities{Streaming: true},
+		Name:               "Research Assistant — Researcher",
+		Description:        "Runs the full research pipeline for a given topic: query generation, parallel web search, LLM structuring, report writing, and artifact persistence.",
+		URL:                "http://localhost" + addr,
+		Version:            "0.1.0",
+		ProtocolVersion:    "0.2.2",
+		Capabilities:       a2a.AgentCapabilities{Streaming: true},
 		DefaultInputModes:  []string{"text/plain"},
 		DefaultOutputModes: []string{"application/json"},
 		Skills: []a2a.AgentSkill{
@@ -109,7 +110,7 @@ func main() {
 
 	go func() {
 		log.Printf("[RESEARCHER] Listening on %s", addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("[RESEARCHER] Server error: %v", err)
 		}
 	}()

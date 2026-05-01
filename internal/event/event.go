@@ -2,34 +2,33 @@ package event
 
 import "context"
 
-type EventType string
+type ResearchEventType string
 
 const (
-	TypeHeartbeat         EventType = "HEARTBEAT"
-	TypeLog               EventType = "LOG"
-	TypeError             EventType = "ERROR"
-	TypeUserInputReceived EventType = "USER_INPUT_RECEIVED"
-	TypeAnalysisRequested EventType = "ANALYSIS_REQUESTED"
-	TypeSummaryRequested  EventType = "SUMMARY_REQUESTED"
-	TypeSummaryComplete   EventType = "SUMMARY_COMPLETE"
-	TypeTimeout           EventType = "TIMEOUT"
-	TypeTick              EventType = "TICK"
+	TypeHeartbeat         ResearchEventType = "HEARTBEAT"
+	TypeLog               ResearchEventType = "LOG"
+	TypeError             ResearchEventType = "ERROR"
+	TypeUserInputReceived ResearchEventType = "USER_INPUT_RECEIVED"
+	TypeAnalysisRequested ResearchEventType = "ANALYSIS_REQUESTED"
+	TypeSummaryRequested  ResearchEventType = "SUMMARY_REQUESTED"
+	TypeSummaryComplete   ResearchEventType = "SUMMARY_COMPLETE"
+	TypeTimeout           ResearchEventType = "TIMEOUT"
+	TypeTick              ResearchEventType = "TICK"
 
-	TypeSearchRequested     EventType = "SEARCH_REQUESTED"
-	TypeSearchCompleted     EventType = "SEARCH_COMPLETED"
-	TypeStructuredDataReady EventType = "STRUCTURED_DATA_READY"
+	TypeSearchRequested     ResearchEventType = "SEARCH_REQUESTED"
+	TypeStructuredDataReady ResearchEventType = "STRUCTURED_DATA_READY"
 )
 
 type Event struct {
-	Type EventType
+	Type ResearchEventType
 	Data any
 }
 
 // StatusUpdate represents a transient status message for the frontend.
 type StatusUpdate struct {
-	Kind    string    `json:"kind"` // always "status"
-	Type    EventType `json:"type"`
-	Message string    `json:"message"`
+	Kind    string            `json:"kind"` // always "status"
+	Type    ResearchEventType `json:"type"`
+	Message string            `json:"message"`
 }
 
 type SearchSource struct {

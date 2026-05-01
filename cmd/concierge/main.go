@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"log"
@@ -121,7 +122,7 @@ func main() {
 
 	go func() {
 		log.Printf("[CONCIERGE] Listening on %s (researcher: %s)", addr, researcherURL)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("[CONCIERGE] Server error: %v", err)
 		}
 	}()

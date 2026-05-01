@@ -49,7 +49,7 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 	result, pipeErr := e.pipeline.RunWithUpdates(ctx, sessionID, topic, func(status, detail string) {
 		log.Printf("[RESEARCHER] %s pipeline update: status=%s, detail=%s", reqCtx.ContextID, status, detail)
 		// Map internal status to event type for PubSub
-		var evType event.EventType
+		var evType event.ResearchEventType
 		switch status {
 		case "searching":
 			evType = event.TypeSearchRequested
