@@ -44,8 +44,10 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 	}
 
 	sessionID := uuid.New().String()
+	log.Printf("[RESEARCHER] %s starting pipeline for topic: %q, session: %s", reqCtx.ContextID, topic, sessionID)
 
 	result, pipeErr := e.pipeline.RunWithUpdates(ctx, sessionID, topic, func(status, detail string) {
+		log.Printf("[RESEARCHER] %s pipeline update: status=%s, detail=%s", reqCtx.ContextID, status, detail)
 		// Map internal status to event type for PubSub
 		var evType event.EventType
 		switch status {
@@ -62,25 +64,27 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 		}
 
 		if evType != "" && e.pub != nil && reqCtx.ContextID != "" {
-			_ = e.pub.PublishEvent(ctx, reqCtx.ContextID, event.Event{
+			if err := e.pub.PublishEvent(ctx, reqCtx.ContextID, event.Event{
 				Type: evType,
 				Data: detail,
-			})
+			}); err != nil {
+				log.Printf("[RESEARCHER] %s failed to publish event to Redis: %v", reqCtx.ContextID, err)
+			}
 		}
 
 		switch status {
 		case "searching":
 			msg := "Searching: " + detail
 			if err := writeStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, msg, false); err != nil {
-				log.Printf("[RESEARCHER] queue write error: %v", err)
+				log.Printf("[RESEARCHER] %s queue write error (searching): %v", reqCtx.ContextID, err)
 			}
 		case "structuring":
 			if err := writeStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, "Structuring findings", false); err != nil {
-				log.Printf("[RESEARCHER] queue write error: %v", err)
+				log.Printf("[RESEARCHER] %s queue write error (structuring): %v", reqCtx.ContextID, err)
 			}
 		case "writing_report":
 			if err := writeStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, "Writing report", false); err != nil {
-				log.Printf("[RESEARCHER] queue write error: %v", err)
+				log.Printf("[RESEARCHER] %s queue write error (writing_report): %v", reqCtx.ContextID, err)
 			}
 		case "failed":
 			msg := detail
@@ -88,7 +92,7 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 				msg = "pipeline failed"
 			}
 			if err := writeStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, msg, true); err != nil {
-				log.Printf("[RESEARCHER] queue write error: %v", err)
+				log.Printf("[RESEARCHER] %s queue write error (failed): %v", reqCtx.ContextID, err)
 			}
 		case "complete":
 			// Final completed event is emitted after RunWithUpdates returns so we
@@ -97,10 +101,12 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 	})
 
 	if pipeErr != nil {
+		log.Printf("[RESEARCHER] %s pipeline finished with error: %v", reqCtx.ContextID, pipeErr)
 		// "failed" status already emitted via onUpdate; no error to return.
 		return nil
 	}
 
+	log.Printf("[RESEARCHER] %s pipeline complete, writing final status", reqCtx.ContextID)
 	// Emit final completed event with artifact data.
 	return writeFinal(ctx, reqCtx, queue, result)
 }

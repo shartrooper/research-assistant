@@ -1,5 +1,7 @@
 package event
 
+import "context"
+
 type EventType string
 
 const (
@@ -82,4 +84,9 @@ type SearchResponse struct {
 
 type Publisher interface {
 	Publish(Event)
+}
+
+// Subscriber defines the interface for subscribing to transient events.
+type Subscriber interface {
+	SubscribeEvents(ctx context.Context, contextID string) (<-chan Event, error)
 }

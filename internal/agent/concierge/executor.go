@@ -27,24 +27,26 @@ type ContextStore interface {
 
 // ResearchStream sends a research topic to the Researcher agent and returns
 // a streaming iterator of A2A events.
-type ResearchStream func(ctx context.Context, topic string) iter.Seq2[a2a.Event, error]
+type ResearchStream func(ctx context.Context, topic string, contextID string) iter.Seq2[a2a.Event, error]
 
 // Executor implements a2asrv.AgentExecutor for the Concierge agent.
 type Executor struct {
 	llm        LLMClient
 	db         ContextStore
 	researcher ResearchStream
+	sub        event.Subscriber
 
 	mu       sync.RWMutex
 	sessions map[string]string // contextID → researchSessionID
 }
 
 // New creates a Concierge Executor.
-func New(llm LLMClient, db ContextStore, researcher ResearchStream) *Executor {
+func New(llm LLMClient, db ContextStore, researcher ResearchStream, sub event.Subscriber) *Executor {
 	return &Executor{
 		llm:        llm,
 		db:         db,
 		researcher: researcher,
+		sub:        sub,
 		sessions:   make(map[string]string),
 	}
 }
@@ -96,7 +98,26 @@ func (e *Executor) handleResearch(ctx context.Context, reqCtx *a2asrv.RequestCon
 		return writeStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, "empty research topic", true)
 	}
 
-	stream := e.researcher(ctx, topic)
+	// Start a Redis listener to relay out-of-band events to the A2A stream.
+	// This ensures that even if the streaming Researcher response is buffered,
+	// the client still gets granular updates via the A2A queue.
+	if e.sub != nil && reqCtx.ContextID != "" {
+		relayCtx, cancelRelay := context.WithCancel(ctx)
+		defer cancelRelay()
+
+		eventCh, err := e.sub.SubscribeEvents(relayCtx, reqCtx.ContextID)
+		if err == nil {
+			go func() {
+				for ev := range eventCh {
+					msg := fmt.Sprintf("%v", ev.Data)
+					log.Printf("[CONCIERGE] %s relaying Redis event to A2A: %s", reqCtx.ContextID, ev.Type)
+					_ = writeStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, msg, false)
+				}
+			}()
+		}
+	}
+
+	stream := e.researcher(ctx, topic, reqCtx.ContextID)
 	for ev, err := range stream {
 		if err != nil {
 			log.Printf("[CONCIERGE] researcher stream error: %v", err)
@@ -104,35 +125,61 @@ func (e *Executor) handleResearch(ctx context.Context, reqCtx *a2asrv.RequestCon
 			return nil
 		}
 
-		typed, ok := ev.(*a2a.TaskStatusUpdateEvent)
-		if !ok {
+		var status a2a.TaskStatus
+		var final bool
+
+		switch typed := ev.(type) {
+		case *a2a.TaskStatusUpdateEvent:
+			status = typed.Status
+			final = typed.Final
+		case *a2a.Task:
+			status = typed.Status
+			final = typed.Status.State == a2a.TaskStateCompleted ||
+				typed.Status.State == a2a.TaskStateFailed ||
+				typed.Status.State == a2a.TaskStateCanceled
+		default:
 			continue
 		}
 
 		// Relay the event to the user, re-addressed to this task.
+		log.Printf("[CONCIERGE] %s relaying researcher event: state=%s, final=%v", reqCtx.ContextID, status.State, final)
 		relayed := &a2a.TaskStatusUpdateEvent{
 			TaskID:    reqCtx.TaskID,
 			ContextID: reqCtx.ContextID,
-			Status:    typed.Status,
-			Final:     typed.Final,
+			Status:    status,
+			Final:     final,
 		}
 		if err := queue.Write(ctx, relayed); err != nil {
 			log.Printf("[CONCIERGE] queue write error: %v", err)
 		}
 
 		// When the researcher reports completion, extract session_id and store it.
-		if typed.Status.State == a2a.TaskStateCompleted {
-			if sessionID := extractSessionID(typed); sessionID != "" {
+		if status.State == a2a.TaskStateCompleted {
+			if sessionID := extractSessionIDFromStatus(status); sessionID != "" {
 				e.storeSession(reqCtx.ContextID, sessionID)
 				log.Printf("[CONCIERGE] %s research complete, session %s", reqCtx.ContextID, sessionID)
 			}
 			return nil
 		}
-		if typed.Status.State == a2a.TaskStateFailed || typed.Status.State == a2a.TaskStateCanceled {
+		if status.State == a2a.TaskStateFailed || status.State == a2a.TaskStateCanceled {
 			return nil
 		}
 	}
 	return nil
+}
+
+func extractSessionIDFromStatus(status a2a.TaskStatus) string {
+	if status.Message == nil {
+		return ""
+	}
+	for _, p := range status.Message.Parts {
+		if dp, ok := p.(a2a.DataPart); ok {
+			if id, ok := dp.Data["session_id"].(string); ok {
+				return id
+			}
+		}
+	}
+	return ""
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +204,7 @@ func (e *Executor) handleQA(ctx context.Context, reqCtx *a2asrv.RequestContext, 
 		return writeStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, fmt.Sprintf("LLM error: %v", err), true)
 	}
 
+	log.Printf("[CONCIERGE] %s generated QA answer, writing to queue", reqCtx.ContextID)
 	return queue.Write(ctx, &a2a.TaskStatusUpdateEvent{
 		TaskID:    reqCtx.TaskID,
 		ContextID: reqCtx.ContextID,

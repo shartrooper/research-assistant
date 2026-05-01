@@ -65,7 +65,7 @@ func main() {
 		PreferredTransport: a2a.TransportProtocol("JSONRPC"),
 		ProtocolVersion:    "0.2.2",
 	}
-	researchStream := func(sctx context.Context, topic string) iter.Seq2[a2a.Event, error] {
+	researchStream := func(sctx context.Context, topic string, contextID string) iter.Seq2[a2a.Event, error] {
 		return func(yield func(a2a.Event, error) bool) {
 			client, err := a2aclient.NewFromCard(sctx, researcherCard)
 			if err != nil {
@@ -73,6 +73,7 @@ func main() {
 				return
 			}
 			msg := a2a.NewMessage(a2a.MessageRoleUser, a2a.TextPart{Text: topic})
+			msg.ContextID = contextID
 			params := &a2a.MessageSendParams{Message: msg}
 			for ev, err := range client.SendStreamingMessage(sctx, params) {
 				if !yield(ev, err) {
@@ -82,7 +83,7 @@ func main() {
 		}
 	}
 
-	exec := concierge.New(gemini, dbStore, researchStream)
+	exec := concierge.New(gemini, dbStore, researchStream, ps)
 
 	card := &a2a.AgentCard{
 		Name:               "Research Assistant — Concierge",

@@ -48,7 +48,7 @@ type mockResearcher struct {
 	err    error
 }
 
-func (m *mockResearcher) Stream(_ context.Context, _ string) iter.Seq2[a2a.Event, error] {
+func (m *mockResearcher) Stream(_ context.Context, _ string, _ string) iter.Seq2[a2a.Event, error] {
 	return func(yield func(a2a.Event, error) bool) {
 		if m.err != nil {
 			yield(nil, m.err)
@@ -160,7 +160,7 @@ func TestConciergeExecutor_RelaysResearcherUpdates(t *testing.T) {
 		},
 	}
 
-	exec := concierge.New(&mockLLM{}, &mockContextStore{}, researcher.Stream)
+	exec := concierge.New(&mockLLM{}, &mockContextStore{}, researcher.Stream, nil)
 	q := &recordingQueue{}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -198,7 +198,7 @@ func TestConciergeExecutor_QAModeLoadsContext(t *testing.T) {
 
 	researcher := &mockResearcher{} // should NOT be called in Q&A mode
 
-	exec := concierge.New(lm, store, researcher.Stream)
+	exec := concierge.New(lm, store, researcher.Stream, nil)
 
 	// Pre-seed the session map so the executor knows context "ctx2" has a completed session.
 	exec.SetSession("ctx2", "session-xyz")
@@ -246,7 +246,7 @@ func TestConciergeExecutor_ResearcherFailure(t *testing.T) {
 		err: fmt.Errorf("researcher: pipeline failed"),
 	}
 
-	exec := concierge.New(&mockLLM{}, &mockContextStore{}, researcher.Stream)
+	exec := concierge.New(&mockLLM{}, &mockContextStore{}, researcher.Stream, nil)
 	q := &recordingQueue{}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -275,7 +275,7 @@ func TestConciergeExecutor_ResearcherFailure(t *testing.T) {
 
 // newHandlerWithResearcher wires up a concierge executor inside the real a2asrv handler stack.
 func newHandlerWithResearcher(researcher *mockResearcher) a2asrv.RequestHandler {
-	exec := concierge.New(&mockLLM{response: "answer"}, &mockContextStore{}, researcher.Stream)
+	exec := concierge.New(&mockLLM{response: "answer"}, &mockContextStore{}, researcher.Stream, nil)
 	return a2asrv.NewHandler(exec)
 }
 
@@ -432,4 +432,3 @@ func TestHandlerStack_SendMessageStream(t *testing.T) {
 		})
 	}
 }
-
