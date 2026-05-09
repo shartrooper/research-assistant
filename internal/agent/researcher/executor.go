@@ -102,6 +102,10 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 
 	if pipeErr != nil {
 		log.Printf("[RESEARCHER] %s pipeline finished with error: %v", reqCtx.ContextID, pipeErr)
+		var appErr *errors.AppError
+		if errors.As(pipeErr, &appErr) {
+			return writeAppError(ctx, reqCtx, queue, a2a.TaskStateFailed, appErr)
+		}
 		// "failed" status already emitted via onUpdate; no error to return.
 		return nil
 	}
@@ -147,6 +151,31 @@ func writeStatus(ctx context.Context, reqCtx *a2asrv.RequestContext, queue event
 			Message: statusMsg,
 		},
 		Final: final,
+	})
+}
+
+func writeAppError(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue, state a2a.TaskState, appErr *errors.AppError) error {
+	msg := a2a.NewMessage(a2a.MessageRoleAgent)
+	msg.Parts = append(msg.Parts, a2a.TextPart{Text: appErr.UserMessage})
+
+	data := map[string]any{
+		"kind":   "error_meta",
+		"code":   appErr.Code,
+		"source": appErr.Source,
+	}
+	if appErr.Recovery != nil {
+		data["recovery"] = appErr.Recovery
+	}
+	if len(appErr.Telemetry) > 0 {
+		data["telemetry"] = appErr.Telemetry
+	}
+	msg.Parts = append(msg.Parts, a2a.DataPart{Data: data})
+
+	return queue.Write(ctx, &a2a.TaskStatusUpdateEvent{
+		TaskID:    reqCtx.TaskID,
+		ContextID: reqCtx.ContextID,
+		Status:    a2a.TaskStatus{State: state, Message: msg},
+		Final:     true,
 	})
 }
 

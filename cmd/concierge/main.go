@@ -40,7 +40,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("[CONCIERGE] Failed to init Gemini client: %v", err)
 	}
-	defer gemini.Close()
+	defer func(gemini *llm.GeminiClient) {
+		err := gemini.Close()
+		if err != nil {
+
+		}
+	}(gemini)
 
 	if err := os.MkdirAll("data", 0755); err != nil {
 		log.Fatalf("[CONCIERGE] Failed to create data dir: %v", err)
@@ -49,7 +54,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("[CONCIERGE] Failed to init SQLite store: %v", err)
 	}
-	defer dbStore.Close()
+	defer func(dbStore *storage.SQLiteStore) {
+		err := dbStore.Close()
+		if err != nil {
+
+		}
+	}(dbStore)
 
 	// Initialize Redis for pubsub and health check
 	redisAddr := config.GetEnv("REDIS_ADDR", "localhost:6379")

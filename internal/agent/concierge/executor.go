@@ -2,6 +2,7 @@ package concierge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	apperrors "github.com/user/research-assistant/internal/errors"
 	"github.com/user/research-assistant/internal/event"
 )
 
@@ -201,6 +203,10 @@ func (e *Executor) handleQA(ctx context.Context, reqCtx *a2asrv.RequestContext, 
 	prompt := buildQAPrompt(question, findings, sources)
 	answer, err := e.llm.GenerateContent(ctx, prompt)
 	if err != nil {
+		var appErr *apperrors.AppError
+		if errors.As(err, &appErr) {
+			return writeAppError(ctx, reqCtx, queue, a2a.TaskStateFailed, appErr)
+		}
 		return writeStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, fmt.Sprintf("LLM error: %v", err), true)
 	}
 
@@ -243,6 +249,31 @@ func writeStatus(ctx context.Context, reqCtx *a2asrv.RequestContext, queue event
 		ContextID: reqCtx.ContextID,
 		Status:    a2a.TaskStatus{State: state, Message: msg},
 		Final:     final,
+	})
+}
+
+func writeAppError(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue, state a2a.TaskState, appErr *apperrors.AppError) error {
+	msg := a2a.NewMessage(a2a.MessageRoleAgent)
+	msg.Parts = append(msg.Parts, a2a.TextPart{Text: appErr.UserMessage})
+
+	data := map[string]any{
+		"kind":   "error_meta",
+		"code":   appErr.Code,
+		"source": appErr.Source,
+	}
+	if appErr.Recovery != nil {
+		data["recovery"] = appErr.Recovery
+	}
+	if len(appErr.Telemetry) > 0 {
+		data["telemetry"] = appErr.Telemetry
+	}
+	msg.Parts = append(msg.Parts, a2a.DataPart{Data: data})
+
+	return queue.Write(ctx, &a2a.TaskStatusUpdateEvent{
+		TaskID:    reqCtx.TaskID,
+		ContextID: reqCtx.ContextID,
+		Status:    a2a.TaskStatus{State: state, Message: msg},
+		Final:     true,
 	})
 }
 

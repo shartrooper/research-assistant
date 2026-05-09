@@ -68,7 +68,7 @@ func (p *Pipeline) RunWithUpdates(ctx context.Context, sessionID, topic string, 
 		"Given the following research topic, generate 3 specific search queries to gather comprehensive information. Return ONLY a JSON array of strings.\nTopic: %s\nReturn ONLY the JSON.", topic)
 	rawQueries, err := p.llm.GenerateContent(ctx, queryPrompt)
 	if err != nil {
-		return fail(fmt.Sprintf("generate queries: %v", err), err)
+		return fail(fmt.Sprintf("An error occurred: %v", err), err)
 	}
 	queries := extractJSONStringArray(rawQueries)
 	if len(queries) == 0 {

@@ -22,7 +22,12 @@ func TestGeminiClient_GenerateContent_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create Gemini client: %v", err)
 	}
-	defer client.Close()
+	defer func(client *GeminiClient) {
+		err := client.Close()
+		if err != nil {
+
+		}
+	}(client)
 
 	// Structured prompt for a research assistant task
 	prompt := `

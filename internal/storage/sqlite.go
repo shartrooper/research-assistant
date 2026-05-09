@@ -43,7 +43,10 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	// Schema uses IF NOT EXISTS so this is safe to run on existing databases.
 	_ = isNew
 	if _, err := db.Exec(schemaSQL); err != nil {
-		db.Close()
+		err := db.Close()
+		if err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
 
@@ -82,13 +85,23 @@ func (s *SQLiteStore) SaveFindings(sessionID string, findings []event.Structured
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func(tx *sql.Tx) {
+		err := tx.Rollback()
+		if err != nil {
+
+		}
+	}(tx)
 
 	stmt, err := tx.Prepare(`INSERT INTO key_findings (session_id, finding, confidence) VALUES (?, ?, ?)`)
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func(stmt *sql.Stmt) {
+		err := stmt.Close()
+		if err != nil {
+
+		}
+	}(stmt)
 
 	for _, f := range findings {
 		if _, err := stmt.Exec(sessionID, f.Finding, f.Confidence); err != nil {
@@ -104,13 +117,23 @@ func (s *SQLiteStore) SaveOpenQuestions(sessionID string, questions []string) er
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func(tx *sql.Tx) {
+		err := tx.Rollback()
+		if err != nil {
+
+		}
+	}(tx)
 
 	stmt, err := tx.Prepare(`INSERT INTO open_questions (session_id, question) VALUES (?, ?)`)
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func(stmt *sql.Stmt) {
+		err := stmt.Close()
+		if err != nil {
+
+		}
+	}(stmt)
 
 	for _, q := range questions {
 		if _, err := stmt.Exec(sessionID, q); err != nil {
@@ -126,13 +149,23 @@ func (s *SQLiteStore) SaveSources(sessionID string, sources []event.SearchSource
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func(tx *sql.Tx) {
+		err := tx.Rollback()
+		if err != nil {
+
+		}
+	}(tx)
 
 	stmt, err := tx.Prepare(`INSERT INTO sources (session_id, query, url, snippet) VALUES (?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
+	defer func(stmt *sql.Stmt) {
+		err := stmt.Close()
+		if err != nil {
+
+		}
+	}(stmt)
 
 	for _, src := range sources {
 		if _, err := stmt.Exec(sessionID, src.Query, src.URL, src.Snippet); err != nil {
@@ -152,7 +185,12 @@ func (s *SQLiteStore) GetKeyFindings(sessionID string) ([]event.StructuredFindin
 	if err != nil {
 		return nil, fmt.Errorf("query key_findings: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+
+		}
+	}(rows)
 
 	var findings []event.StructuredFinding
 	for rows.Next() {
@@ -174,7 +212,12 @@ func (s *SQLiteStore) GetSources(sessionID string) ([]event.SearchSource, error)
 	if err != nil {
 		return nil, fmt.Errorf("query sources: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+
+		}
+	}(rows)
 
 	var sources []event.SearchSource
 	for rows.Next() {
@@ -197,4 +240,3 @@ func (s *SQLiteStore) MarkSessionComplete(id, reportKey, jsonKey string) error {
 	}
 	return nil
 }
-

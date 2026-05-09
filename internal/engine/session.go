@@ -43,13 +43,6 @@ type SessionManager struct {
 	mu       sync.RWMutex
 }
 
-// NewSessionManager creates a new session manager
-func NewSessionManager() *SessionManager {
-	return &SessionManager{
-		sessions: make(map[string]*ResearchSession),
-	}
-}
-
 // CreateSession initializes and stores a new session
 func (m *SessionManager) CreateSession(id string, prompt string, totalTasks int) *ResearchSession {
 	m.mu.Lock()

@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/user/research-assistant/internal/errors"
 )
 
 type Options struct {
@@ -27,10 +30,10 @@ type ContentResponse struct {
 
 func ContentWebSearch(ctx context.Context, apiKey, cx, query string, opts Options) ([]ContentResult, error) {
 	if strings.TrimSpace(apiKey) == "" || strings.TrimSpace(cx) == "" {
-		return nil, fmt.Errorf("missing CSE key or cx")
+		return nil, errors.New(errors.CodeInternalFailure, "search", "Search provider configuration missing.", nil)
 	}
 	if strings.TrimSpace(query) == "" {
-		return nil, fmt.Errorf("empty query")
+		return nil, errors.New(errors.CodeQueryInvalid, "search", "Search query is empty.", nil)
 	}
 	if opts.Num <= 0 || opts.Num > 10 {
 		opts.Num = 5
@@ -51,19 +54,31 @@ func ContentWebSearch(ctx context.Context, apiKey, cx, query string, opts Option
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, errors.New(errors.CodeProviderUnavailable, "search", "Failed to connect to search provider.", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		appErr := errors.New(errors.CodeQuotaExceeded, "search", "Search quota exceeded.", nil)
+		appErr.Recovery = &errors.RecoveryAction{Type: errors.RecoveryWait, WaitSeconds: 60}
+		return nil, appErr
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("cse http %d", resp.StatusCode)
+		return nil, errors.New(errors.CodeProviderUnavailable, "search", fmt.Sprintf("Search provider returned error status: %d", resp.StatusCode), nil)
 	}
 
 	var sr ContentResponse
 	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
-		return nil, err
+		return nil, errors.New(errors.CodeInternalFailure, "search", "Failed to decode search response.", err)
 	}
 	if len(sr.Items) == 0 {
-		return nil, fmt.Errorf("no results")
+		return nil, errors.New(errors.CodeQueryInvalid, "search", "No results found for your query.", nil)
 	}
 
 	return sr.Items, nil

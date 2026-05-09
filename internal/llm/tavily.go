@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -60,7 +61,7 @@ func (t *TavilyClient) Search(ctx context.Context, query string) (*TavilySearchR
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	cleanKey := strings.TrimSpace(t.APIKey)
 	req.Header.Set("Authorization", "Bearer "+cleanKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -70,7 +71,12 @@ func (t *TavilyClient) Search(ctx context.Context, query string) (*TavilySearchR
 	if err != nil {
 		return nil, fmt.Errorf("search request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("tavily api error: status %d", resp.StatusCode)

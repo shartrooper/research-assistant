@@ -2,9 +2,13 @@ package llm
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/generative-ai-go/genai"
+	apperrors "github.com/user/research-assistant/internal/errors"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
@@ -38,24 +42,59 @@ func (g *GeminiClient) GenerateContent(ctx context.Context, prompt string) (stri
 		fallbackModel := g.client.GenerativeModel("gemini-2.5-flash-lite")
 		resp, err = fallbackModel.GenerateContent(ctx, genai.Text(prompt))
 		if err != nil {
-			return "", fmt.Errorf("primary and fallback models failed: %w", err)
+			return "", g.wrapError(err)
 		}
 	}
 
 	if len(resp.Candidates) == 0 {
-		return "", fmt.Errorf("no candidates returned from gemini")
+		return "", apperrors.New(apperrors.CodeInternalFailure, "llm", "No response generated", nil)
+	}
+
+	candidate := resp.Candidates[0]
+	if candidate.FinishReason == genai.FinishReasonSafety {
+		appErr := apperrors.New(apperrors.CodePolicyViolation, "llm", "Content filtered due to safety policies.", nil)
+		appErr.Recovery = &apperrors.RecoveryAction{Type: apperrors.RecoveryRephrase}
+		appErr.Telemetry = map[string]any{
+			"finish_reason": "safety",
+		}
+		return "", appErr
 	}
 
 	var result string
-	for _, part := range resp.Candidates[0].Content.Parts {
-		if text, ok := part.(genai.Text); ok {
-			result += string(text)
+	if candidate.Content != nil {
+		for _, part := range candidate.Content.Parts {
+			if text, ok := part.(genai.Text); ok {
+				result += string(text)
+			}
 		}
 	}
 
 	if result == "" {
-		return "", fmt.Errorf("empty response from gemini")
+		return "", apperrors.New(apperrors.CodeInternalFailure, "llm", "Empty response from provider", nil)
 	}
 
 	return result, nil
+}
+
+func (g *GeminiClient) wrapError(err error) error {
+	var gErr *googleapi.Error
+	if errors.As(err, &gErr) {
+		if gErr.Code == 429 {
+			appErr := apperrors.New(apperrors.CodeQuotaExceeded, "llm", "Daily request limit reached.", err)
+			appErr.Recovery = &apperrors.RecoveryAction{
+				Type:        apperrors.RecoveryWait,
+				WaitSeconds: 60, // Default wait
+			}
+			return appErr
+		}
+		if gErr.Code >= 500 {
+			return apperrors.New(apperrors.CodeProviderUnavailable, "llm", "Model provider is currently overloaded.", err)
+		}
+	}
+
+	if strings.Contains(err.Error(), "quota") {
+		return apperrors.New(apperrors.CodeQuotaExceeded, "llm", "Quota exceeded.", err)
+	}
+
+	return apperrors.New(apperrors.CodeInternalFailure, "llm", "An unexpected error occurred during generation.", err)
 }

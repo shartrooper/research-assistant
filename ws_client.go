@@ -17,7 +17,12 @@ func main() {
 	if err != nil {
 		log.Fatal("dial:", err)
 	}
-	defer c.Close()
+	defer func(c *websocket.Conn) {
+		err := c.Close()
+		if err != nil {
+
+		}
+	}(c)
 
 	done := make(chan struct{})
 
@@ -62,6 +67,9 @@ func main() {
 
 	// Wait a few seconds to receive searching/structuring updates
 	time.Sleep(5 * time.Second)
-	c.Close()
+	err = c.Close()
+	if err != nil {
+		return
+	}
 	<-done
 }

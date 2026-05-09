@@ -50,7 +50,12 @@ func (ps *RedisPubSub) SubscribeEvents(ctx context.Context, contextID string) (<
 
 	go func() {
 		defer close(ch)
-		defer pubsub.Close()
+		defer func(pubsub *redis.PubSub) {
+			err := pubsub.Close()
+			if err != nil {
+
+			}
+		}(pubsub)
 
 		redisCh := pubsub.Channel()
 		for {
