@@ -2,6 +2,7 @@ package researcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/google/uuid"
+	apperrors "github.com/user/research-assistant/internal/errors"
 	"github.com/user/research-assistant/internal/event"
 	"github.com/user/research-assistant/internal/pipeline"
 )
@@ -102,7 +104,7 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 
 	if pipeErr != nil {
 		log.Printf("[RESEARCHER] %s pipeline finished with error: %v", reqCtx.ContextID, pipeErr)
-		var appErr *errors.AppError
+		var appErr *apperrors.AppError
 		if errors.As(pipeErr, &appErr) {
 			return writeAppError(ctx, reqCtx, queue, a2a.TaskStateFailed, appErr)
 		}
@@ -154,7 +156,7 @@ func writeStatus(ctx context.Context, reqCtx *a2asrv.RequestContext, queue event
 	})
 }
 
-func writeAppError(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue, state a2a.TaskState, appErr *errors.AppError) error {
+func writeAppError(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue, state a2a.TaskState, appErr *apperrors.AppError) error {
 	msg := a2a.NewMessage(a2a.MessageRoleAgent)
 	msg.Parts = append(msg.Parts, a2a.TextPart{Text: appErr.UserMessage})
 
