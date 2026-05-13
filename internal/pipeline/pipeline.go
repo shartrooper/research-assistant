@@ -226,7 +226,7 @@ Report:
 	go func() { defer wg.Done(); _ = p.db.SaveOpenQuestions(sessionID, structured.OpenQuestions) }()
 	go func() { defer wg.Done(); _ = p.db.SaveSources(sessionID, structured.Sources) }()
 	wg.Wait()
-	_ = p.db.MarkSessionComplete(sessionID, reportMDKey, reportJSONKey)
+	_ = p.db.MarkSessionComplete(sessionID, reportMDKey, reportJSONKey, summary)
 
 	onUpdate("complete", reportMDKey)
 	return &Result{SessionID: sessionID, ReportMDKey: reportMDKey, ReportJSONKey: reportJSONKey}, nil

@@ -3,6 +3,7 @@ package storage
 import (
 	"database/sql"
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 
@@ -20,7 +21,9 @@ type StructuredStorage interface {
 	SaveFindings(sessionID string, findings []event.StructuredFinding) error
 	SaveOpenQuestions(sessionID string, questions []string) error
 	SaveSources(sessionID string, sources []event.SearchSource) error
-	MarkSessionComplete(id, reportKey, jsonKey string) error
+	MarkSessionComplete(id, reportKey, jsonKey, summary string) error
+	GetSessionStatus(id string) (status string, errMsg string, err error)
+	DeleteSession(id string) error
 }
 
 type SQLiteStore struct {
@@ -230,13 +233,55 @@ func (s *SQLiteStore) GetSources(sessionID string) ([]event.SearchSource, error)
 	return sources, rows.Err()
 }
 
-func (s *SQLiteStore) MarkSessionComplete(id, reportKey, jsonKey string) error {
+func (s *SQLiteStore) MarkSessionComplete(id, reportKey, jsonKey, summary string) error {
 	query := `UPDATE research_sessions 
-              SET status = 'complete', report_md_key = ?, report_json_key = ?, updated_at = CURRENT_TIMESTAMP 
+              SET status = 'complete', report_md_key = ?, report_json_key = ?, summary = ?, updated_at = CURRENT_TIMESTAMP 
               WHERE id = ?`
-	_, err := s.db.Exec(query, reportKey, jsonKey, id)
+	_, err := s.db.Exec(query, reportKey, jsonKey, summary, id)
 	if err != nil {
 		return fmt.Errorf("mark session complete: %w", err)
 	}
 	return nil
+}
+
+func (s *SQLiteStore) GetSessionStatus(id string) (string, string, error) {
+	query := `SELECT status, COALESCE(error, '') FROM research_sessions WHERE id = ?`
+	var status, errMsg string
+	err := s.db.QueryRow(query, id).Scan(&status, &errMsg)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", "", nil
+		}
+		return "", "", fmt.Errorf("get session status: %w", err)
+	}
+	return status, errMsg, nil
+}
+
+func (s *SQLiteStore) DeleteSession(id string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+
+	defer func(tx *sql.Tx) {
+		rollbackErr := tx.Rollback()
+		if rollbackErr != nil && err == nil {
+			err = rollbackErr
+		}
+	}(tx)
+
+	// Delete from child tables (though CASCADE would be better if we had it in schema)
+	tables := []string{"key_findings", "open_questions", "sources"}
+	for _, table := range tables {
+		if _, err := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE session_id = ?", table), id); err != nil {
+			return fmt.Errorf("delete from %s: %w", table, err)
+		}
+	}
+
+	// Delete from main table
+	if _, err := tx.Exec("DELETE FROM research_sessions WHERE id = ?", id); err != nil {
+		return fmt.Errorf("delete from research_sessions: %w", err)
+	}
+
+	return tx.Commit()
 }

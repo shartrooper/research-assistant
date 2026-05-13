@@ -25,6 +25,7 @@ type LLMClient interface {
 type ContextStore interface {
 	GetKeyFindings(sessionID string) ([]event.StructuredFinding, error)
 	GetSources(sessionID string) ([]event.SearchSource, error)
+	GetSessionStatus(sessionID string) (status string, errMsg string, err error)
 }
 
 // ResearchStream sends a research topic to the Researcher agent and returns
@@ -189,6 +190,26 @@ func extractSessionIDFromStatus(status a2a.TaskStatus) string {
 // ---------------------------------------------------------------------------
 
 func (e *Executor) handleQA(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue, sessionID string) error {
+	status, errMsg, err := e.db.GetSessionStatus(sessionID)
+	if err != nil {
+		log.Printf("[CONCIERGE] GetSessionStatus error: %v", err)
+	}
+
+	switch status {
+	case "complete":
+		// Proceed to Q&A
+	case "failed":
+		msg := "The research for this topic failed."
+		if errMsg != "" {
+			msg = fmt.Sprintf("The research failed: %s", errMsg)
+		}
+		return writeStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, msg, true)
+	case "queued", "searching", "structuring", "writing_report":
+		return writeStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, "I'm still working on the research. Please wait until it's complete before asking questions.", false)
+	default:
+		// Fallback for unknown status
+	}
+
 	question := extractText(reqCtx.Message)
 
 	findings, err := e.db.GetKeyFindings(sessionID)

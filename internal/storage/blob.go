@@ -12,6 +12,8 @@ import (
 type BlobStorage interface {
 	// SaveBlob stores a blob and returns its key/path
 	SaveBlob(name string, content []byte, extension string) (string, error)
+	// DeleteBlob removes a blob from storage
+	DeleteBlob(key string) error
 }
 
 type DiskBlobStore struct {
@@ -32,15 +34,24 @@ func (s *DiskBlobStore) SaveBlob(name string, content []byte, extension string) 
 	timestamp := time.Now().UTC().Format("20060102-150405")
 	safeName := safeFilename(name)
 	filename := fmt.Sprintf("%s-%s.%s", safeName, timestamp, extension)
-	
+
 	fullPath := filepath.Join(s.baseDir, filename)
-	
+
 	if err := os.WriteFile(fullPath, content, 0o644); err != nil {
 		return "", fmt.Errorf("write blob: %w", err)
 	}
-	
+
 	// Return the relative path or key
 	return filename, nil
+}
+
+func (s *DiskBlobStore) DeleteBlob(key string) error {
+	fullPath := filepath.Join(s.baseDir, key)
+	// Check if file exists to avoid error if it's already gone
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		return nil
+	}
+	return os.Remove(fullPath)
 }
 
 func safeFilename(input string) string {

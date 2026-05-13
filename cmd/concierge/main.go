@@ -128,8 +128,14 @@ func main() {
 	mux.Handle("/", a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(exec)))
 	mux.HandleFunc("/ws", concierge.HandleWebSocket(a2asrv.NewHandler(exec), ps))
 
-	srv := &http.Server{Addr: addr, Handler: mux}
+	// Serve artifacts
+	artifactDir := config.GetEnv("ARTIFACTS_DIR", "artifacts")
+	if err := os.MkdirAll(artifactDir, 0755); err != nil {
+		log.Printf("[CONCIERGE] Failed to create artifacts dir: %v", err)
+	}
+	mux.Handle("/artifacts/", http.StripPrefix("/artifacts/", http.FileServer(http.Dir(artifactDir))))
 
+	srv := &http.Server{Addr: addr, Handler: mux}
 	go func() {
 		log.Printf("[CONCIERGE] Listening on %s (researcher: %s)", addr, researcherURL)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
