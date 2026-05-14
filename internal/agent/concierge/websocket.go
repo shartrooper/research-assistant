@@ -43,9 +43,10 @@ type wsJSONResponse struct {
 }
 
 // HandleWebSocket upgrades the HTTP connection and bridges JSON to the A2A Executor.
-func HandleWebSocket(handler a2asrv.RequestHandler, ps event.Subscriber) http.HandlerFunc {
+func HandleWebSocket(handler a2asrv.RequestHandler, ps event.Subscriber, exec *Executor) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
+
 		if err != nil {
 			log.Printf("[WS] Upgrade error: %v", err)
 			return
@@ -99,8 +100,8 @@ func HandleWebSocket(handler a2asrv.RequestHandler, ps event.Subscriber) http.Ha
 				continue
 			}
 
-			// We only support message/send or message/stream for now as a POC bridge.
-			if req.Method != "message/send" && req.Method != "message/stream" {
+			// We only support message/send, message/stream, or session/delete.
+			if req.Method != "message/send" && req.Method != "message/stream" && req.Method != "session/delete" {
 				_ = writeJSON(wsJSONResponse{
 					JSONRPC: "2.0",
 					ID:      req.ID,
@@ -125,7 +126,41 @@ func HandleWebSocket(handler a2asrv.RequestHandler, ps event.Subscriber) http.Ha
 				continue
 			}
 
+			if req.Method == "session/delete" {
+				if params.ContextID == "" {
+					_ = writeJSON(wsJSONResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Error: map[string]any{
+							"code":    -32602,
+							"message": "contextId is required for session/delete",
+						},
+					})
+					continue
+				}
+				go func() {
+					if err := exec.DeleteSession(context.Background(), params.ContextID); err != nil {
+						_ = writeJSON(wsJSONResponse{
+							JSONRPC: "2.0",
+							ID:      req.ID,
+							Error: map[string]any{
+								"code":    -32000,
+								"message": fmt.Sprintf("delete failed: %v", err),
+							},
+						})
+						return
+					}
+					_ = writeJSON(wsJSONResponse{
+						JSONRPC: "2.0",
+						ID:      req.ID,
+						Result:  map[string]any{"status": "deleted"},
+					})
+				}()
+				continue
+			}
+
 			go func() {
+
 				ctx, _ := a2asrv.WithCallContext(context.Background(), a2asrv.NewRequestMeta(r.Header))
 				if params.ContextID != "" {
 					if params.Message == nil {

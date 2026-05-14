@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/google/uuid"
+	"github.com/user/research-assistant/internal/agent"
 	apperrors "github.com/user/research-assistant/internal/errors"
 	"github.com/user/research-assistant/internal/event"
 	"github.com/user/research-assistant/internal/pipeline"
@@ -40,9 +40,9 @@ func New(pl PipelineRunner, pub EventPublisher) *Executor {
 // Execute runs the research pipeline for the topic extracted from the incoming
 // A2A message, streaming status updates via the queue.
 func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue) error {
-	topic := extractTopic(reqCtx.Message)
+	topic := agent.ExtractText(reqCtx.Message)
 	if topic == "" {
-		return writeStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, "empty research topic", true)
+		return agent.WriteStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, "empty research topic", true)
 	}
 
 	sessionID := uuid.New().String()
@@ -77,15 +77,15 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 		switch status {
 		case "searching":
 			msg := "Searching: " + detail
-			if err := writeStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, msg, false); err != nil {
+			if err := agent.WriteStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, msg, false); err != nil {
 				log.Printf("[RESEARCHER] %s queue write error (searching): %v", reqCtx.ContextID, err)
 			}
 		case "structuring":
-			if err := writeStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, "Structuring findings", false); err != nil {
+			if err := agent.WriteStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, "Structuring findings", false); err != nil {
 				log.Printf("[RESEARCHER] %s queue write error (structuring): %v", reqCtx.ContextID, err)
 			}
 		case "writing_report":
-			if err := writeStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, "Writing report", false); err != nil {
+			if err := agent.WriteStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, "Writing report", false); err != nil {
 				log.Printf("[RESEARCHER] %s queue write error (writing_report): %v", reqCtx.ContextID, err)
 			}
 		case "failed":
@@ -93,7 +93,7 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 			if msg == "" {
 				msg = "pipeline failed"
 			}
-			if err := writeStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, msg, true); err != nil {
+			if err := agent.WriteStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, msg, true); err != nil {
 				log.Printf("[RESEARCHER] %s queue write error (failed): %v", reqCtx.ContextID, err)
 			}
 		case "complete":
@@ -106,7 +106,7 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 		log.Printf("[RESEARCHER] %s pipeline finished with error: %v", reqCtx.ContextID, pipeErr)
 		var appErr *apperrors.AppError
 		if errors.As(pipeErr, &appErr) {
-			return writeAppError(ctx, reqCtx, queue, a2a.TaskStateFailed, appErr)
+			return agent.WriteAppError(ctx, reqCtx, queue, a2a.TaskStateFailed, appErr)
 		}
 		// "failed" status already emitted via onUpdate; no error to return.
 		return nil
@@ -120,66 +120,12 @@ func (e *Executor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, q
 // Cancel signals the running pipeline to stop. The context passed to Execute
 // is cancelled by the A2A server; this implementation writes a cancelled event.
 func (e *Executor) Cancel(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue) error {
-	return writeStatus(ctx, reqCtx, queue, a2a.TaskStateCanceled, "cancelled by client", true)
+	return agent.WriteStatus(ctx, reqCtx, queue, a2a.TaskStateCanceled, "cancelled by client", true)
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-func extractTopic(msg *a2a.Message) string {
-	if msg == nil {
-		return ""
-	}
-	var sb strings.Builder
-	for _, p := range msg.Parts {
-		if tp, ok := p.(a2a.TextPart); ok {
-			sb.WriteString(tp.Text)
-		}
-	}
-	return strings.TrimSpace(sb.String())
-}
-
-func writeStatus(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue, state a2a.TaskState, text string, final bool) error {
-	var statusMsg *a2a.Message
-	if text != "" {
-		statusMsg = a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: text})
-	}
-	return queue.Write(ctx, &a2a.TaskStatusUpdateEvent{
-		TaskID:    reqCtx.TaskID,
-		ContextID: reqCtx.ContextID,
-		Status: a2a.TaskStatus{
-			State:   state,
-			Message: statusMsg,
-		},
-		Final: final,
-	})
-}
-
-func writeAppError(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue, state a2a.TaskState, appErr *apperrors.AppError) error {
-	msg := a2a.NewMessage(a2a.MessageRoleAgent)
-	msg.Parts = append(msg.Parts, a2a.TextPart{Text: appErr.UserMessage})
-
-	data := map[string]any{
-		"kind":   "error_meta",
-		"code":   appErr.Code,
-		"source": appErr.Source,
-	}
-	if appErr.Recovery != nil {
-		data["recovery"] = appErr.Recovery
-	}
-	if len(appErr.Telemetry) > 0 {
-		data["telemetry"] = appErr.Telemetry
-	}
-	msg.Parts = append(msg.Parts, a2a.DataPart{Data: data})
-
-	return queue.Write(ctx, &a2a.TaskStatusUpdateEvent{
-		TaskID:    reqCtx.TaskID,
-		ContextID: reqCtx.ContextID,
-		Status:    a2a.TaskStatus{State: state, Message: msg},
-		Final:     true,
-	})
-}
 
 func writeFinal(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue, result *pipeline.Result) error {
 	if result == nil {

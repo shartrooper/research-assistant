@@ -58,18 +58,22 @@ func (m *mockSearcher) search(_ context.Context, _ string) ([]pipeline.SearchRes
 
 type mockDB struct{}
 
-func (m *mockDB) CreateSession(_, _ string) error                                      { return nil }
-func (m *mockDB) UpdateSessionStatus(_, _, _ string) error                             { return nil }
-func (m *mockDB) SaveFindings(_ string, _ []event.StructuredFinding) error             { return nil }
-func (m *mockDB) SaveOpenQuestions(_ string, _ []string) error                         { return nil }
-func (m *mockDB) SaveSources(_ string, _ []event.SearchSource) error                   { return nil }
-func (m *mockDB) MarkSessionComplete(_, _, _ string) error                             { return nil }
+func (m *mockDB) CreateSession(_, _ string) error                          { return nil }
+func (m *mockDB) UpdateSessionStatus(_, _, _ string) error                 { return nil }
+func (m *mockDB) SaveFindings(_ string, _ []event.StructuredFinding) error { return nil }
+func (m *mockDB) SaveOpenQuestions(_ string, _ []string) error             { return nil }
+func (m *mockDB) SaveSources(_ string, _ []event.SearchSource) error       { return nil }
+func (m *mockDB) MarkSessionComplete(_, _, _, _ string) error              { return nil }
+func (m *mockDB) GetSessionStatus(_ string) (string, string, error)        { return "", "", nil }
+func (m *mockDB) GetSessionArtifacts(_ string) (string, string, error)     { return "", "", nil }
+func (m *mockDB) DeleteSession(_ string) error                             { return nil }
 
 type mockBlob struct{}
 
 func (m *mockBlob) SaveBlob(_ string, _ []byte, _ string) (string, error) {
 	return "mock-key", nil
 }
+func (m *mockBlob) DeleteBlob(_ string) error { return nil }
 
 // ---------------------------------------------------------------------------
 // Helpers

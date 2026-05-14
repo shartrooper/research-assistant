@@ -23,6 +23,7 @@ type StructuredStorage interface {
 	SaveSources(sessionID string, sources []event.SearchSource) error
 	MarkSessionComplete(id, reportKey, jsonKey, summary string) error
 	GetSessionStatus(id string) (status string, errMsg string, err error)
+	GetSessionArtifacts(id string) (reportMDKey, reportJSONKey string, err error)
 	DeleteSession(id string) error
 }
 
@@ -255,6 +256,19 @@ func (s *SQLiteStore) GetSessionStatus(id string) (string, string, error) {
 		return "", "", fmt.Errorf("get session status: %w", err)
 	}
 	return status, errMsg, nil
+}
+
+func (s *SQLiteStore) GetSessionArtifacts(id string) (string, string, error) {
+	query := `SELECT COALESCE(report_md_key, ''), COALESCE(report_json_key, '') FROM research_sessions WHERE id = ?`
+	var md, json string
+	err := s.db.QueryRow(query, id).Scan(&md, &json)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", "", nil
+		}
+		return "", "", fmt.Errorf("get session artifacts: %w", err)
+	}
+	return md, json, nil
 }
 
 func (s *SQLiteStore) DeleteSession(id string) error {

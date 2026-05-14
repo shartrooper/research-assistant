@@ -12,8 +12,10 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/user/research-assistant/internal/agent"
 	apperrors "github.com/user/research-assistant/internal/errors"
 	"github.com/user/research-assistant/internal/event"
+	"github.com/user/research-assistant/internal/storage"
 )
 
 // LLMClient generates content given a prompt.
@@ -26,6 +28,8 @@ type ContextStore interface {
 	GetKeyFindings(sessionID string) ([]event.StructuredFinding, error)
 	GetSources(sessionID string) ([]event.SearchSource, error)
 	GetSessionStatus(sessionID string) (status string, errMsg string, err error)
+	GetSessionArtifacts(sessionID string) (reportMDKey, reportJSONKey string, err error)
+	DeleteSession(sessionID string) error
 }
 
 // ResearchStream sends a research topic to the Researcher agent and returns
@@ -38,18 +42,20 @@ type Executor struct {
 	db         ContextStore
 	researcher ResearchStream
 	sub        event.Subscriber
+	blobs      storage.BlobStorage
 
 	mu       sync.RWMutex
 	sessions map[string]string // contextID → researchSessionID
 }
 
 // New creates a Concierge Executor.
-func New(llm LLMClient, db ContextStore, researcher ResearchStream, sub event.Subscriber) *Executor {
+func New(llm LLMClient, db ContextStore, researcher ResearchStream, sub event.Subscriber, blobs storage.BlobStorage) *Executor {
 	return &Executor{
 		llm:        llm,
 		db:         db,
 		researcher: researcher,
 		sub:        sub,
+		blobs:      blobs,
 		sessions:   make(map[string]string),
 	}
 }
@@ -91,14 +97,52 @@ func (e *Executor) Cancel(_ context.Context, _ *a2asrv.RequestContext, _ eventqu
 	return nil
 }
 
+func (e *Executor) DeleteSession(ctx context.Context, contextID string) error {
+	sessionID, ok := e.getSession(contextID)
+	if !ok {
+		return nil
+	}
+
+	// 1. Get artifact keys from DB before deleting the session record
+	md, json, err := e.db.GetSessionArtifacts(sessionID)
+	if err != nil {
+		log.Printf("[CONCIERGE] %s GetSessionArtifacts error: %v", contextID, err)
+	}
+
+	// 2. Delete physical files
+	if md != "" {
+		if err := e.blobs.DeleteBlob(md); err != nil {
+			log.Printf("[CONCIERGE] %s DeleteBlob (MD) error: %v", contextID, err)
+		}
+	}
+	if json != "" {
+		if err := e.blobs.DeleteBlob(json); err != nil {
+			log.Printf("[CONCIERGE] %s DeleteBlob (JSON) error: %v", contextID, err)
+		}
+	}
+
+	// 3. Delete database records
+	if err := e.db.DeleteSession(sessionID); err != nil {
+		return fmt.Errorf("delete session record: %w", err)
+	}
+
+	// 4. Clean up in-memory state
+	e.mu.Lock()
+	delete(e.sessions, contextID)
+	e.mu.Unlock()
+
+	log.Printf("[CONCIERGE] %s session %s purged", contextID, sessionID)
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Research mode
 // ---------------------------------------------------------------------------
 
 func (e *Executor) handleResearch(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue) error {
-	topic := extractText(reqCtx.Message)
+	topic := agent.ExtractText(reqCtx.Message)
 	if topic == "" {
-		return writeStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, "empty research topic", true)
+		return agent.WriteStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, "empty research topic", true)
 	}
 
 	// Start a Redis listener to relay out-of-band events to the A2A stream.
@@ -114,7 +158,7 @@ func (e *Executor) handleResearch(ctx context.Context, reqCtx *a2asrv.RequestCon
 				for ev := range eventCh {
 					msg := fmt.Sprintf("%v", ev.Data)
 					log.Printf("[CONCIERGE] %s relaying Redis event to A2A: %s", reqCtx.ContextID, ev.Type)
-					_ = writeStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, msg, false)
+					_ = agent.WriteStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, msg, false)
 				}
 			}()
 		}
@@ -124,7 +168,7 @@ func (e *Executor) handleResearch(ctx context.Context, reqCtx *a2asrv.RequestCon
 	for ev, err := range stream {
 		if err != nil {
 			log.Printf("[CONCIERGE] researcher stream error: %v", err)
-			_ = writeStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, err.Error(), true)
+			_ = agent.WriteStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, err.Error(), true)
 			return nil
 		}
 
@@ -203,14 +247,14 @@ func (e *Executor) handleQA(ctx context.Context, reqCtx *a2asrv.RequestContext, 
 		if errMsg != "" {
 			msg = fmt.Sprintf("The research failed: %s", errMsg)
 		}
-		return writeStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, msg, true)
+		return agent.WriteStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, msg, true)
 	case "queued", "searching", "structuring", "writing_report":
-		return writeStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, "I'm still working on the research. Please wait until it's complete before asking questions.", false)
+		return agent.WriteStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, "I'm still working on the research. Please wait until it's complete before asking questions.", false)
 	default:
 		// Fallback for unknown status
 	}
 
-	question := extractText(reqCtx.Message)
+	question := agent.ExtractText(reqCtx.Message)
 
 	findings, err := e.db.GetKeyFindings(sessionID)
 	if err != nil {
@@ -226,9 +270,9 @@ func (e *Executor) handleQA(ctx context.Context, reqCtx *a2asrv.RequestContext, 
 	if err != nil {
 		var appErr *apperrors.AppError
 		if errors.As(err, &appErr) {
-			return writeAppError(ctx, reqCtx, queue, a2a.TaskStateFailed, appErr)
+			return agent.WriteAppError(ctx, reqCtx, queue, a2a.TaskStateFailed, appErr)
 		}
-		return writeStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, fmt.Sprintf("LLM error: %v", err), true)
+		return agent.WriteStatus(ctx, reqCtx, queue, a2a.TaskStateFailed, fmt.Sprintf("LLM error: %v", err), true)
 	}
 
 	log.Printf("[CONCIERGE] %s generated QA answer, writing to queue", reqCtx.ContextID)
@@ -246,57 +290,6 @@ func (e *Executor) handleQA(ctx context.Context, reqCtx *a2asrv.RequestContext, 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-func extractText(msg *a2a.Message) string {
-	if msg == nil {
-		return ""
-	}
-	var sb strings.Builder
-	for _, p := range msg.Parts {
-		if tp, ok := p.(a2a.TextPart); ok {
-			sb.WriteString(tp.Text)
-		}
-	}
-	return strings.TrimSpace(sb.String())
-}
-
-func writeStatus(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue, state a2a.TaskState, text string, final bool) error {
-	var msg *a2a.Message
-	if text != "" {
-		msg = a2a.NewMessage(a2a.MessageRoleAgent, a2a.TextPart{Text: text})
-	}
-	return queue.Write(ctx, &a2a.TaskStatusUpdateEvent{
-		TaskID:    reqCtx.TaskID,
-		ContextID: reqCtx.ContextID,
-		Status:    a2a.TaskStatus{State: state, Message: msg},
-		Final:     final,
-	})
-}
-
-func writeAppError(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue, state a2a.TaskState, appErr *apperrors.AppError) error {
-	msg := a2a.NewMessage(a2a.MessageRoleAgent)
-	msg.Parts = append(msg.Parts, a2a.TextPart{Text: appErr.UserMessage})
-
-	data := map[string]any{
-		"kind":   "error_meta",
-		"code":   appErr.Code,
-		"source": appErr.Source,
-	}
-	if appErr.Recovery != nil {
-		data["recovery"] = appErr.Recovery
-	}
-	if len(appErr.Telemetry) > 0 {
-		data["telemetry"] = appErr.Telemetry
-	}
-	msg.Parts = append(msg.Parts, a2a.DataPart{Data: data})
-
-	return queue.Write(ctx, &a2a.TaskStatusUpdateEvent{
-		TaskID:    reqCtx.TaskID,
-		ContextID: reqCtx.ContextID,
-		Status:    a2a.TaskStatus{State: state, Message: msg},
-		Final:     true,
-	})
-}
 
 func buildQAPrompt(question string, findings []event.StructuredFinding, sources []event.SearchSource) string {
 	var sb strings.Builder

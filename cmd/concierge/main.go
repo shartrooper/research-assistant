@@ -94,8 +94,13 @@ func main() {
 		}
 	}
 
-	exec := concierge.New(gemini, dbStore, researchStream, ps)
+	artifactDir := config.GetEnv("ARTIFACTS_DIR", "artifacts")
+	blobStore, err := storage.NewDiskBlobStore(artifactDir)
+	if err != nil {
+		log.Fatalf("[CONCIERGE] Failed to init blob store: %v", err)
+	}
 
+	exec := concierge.New(gemini, dbStore, researchStream, ps, blobStore)
 	card := &a2a.AgentCard{
 		Name:               "Research Assistant — Concierge",
 		Description:        "User-facing research agent: accepts research topics, coordinates with the Researcher, relays live status updates, and answers follow-up questions grounded in completed research.",
@@ -126,10 +131,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
 	mux.Handle("/", a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(exec)))
-	mux.HandleFunc("/ws", concierge.HandleWebSocket(a2asrv.NewHandler(exec), ps))
-
+	mux.HandleFunc("/ws", concierge.HandleWebSocket(a2asrv.NewHandler(exec), ps, exec))
 	// Serve artifacts
-	artifactDir := config.GetEnv("ARTIFACTS_DIR", "artifacts")
+	artifactDir = config.GetEnv("ARTIFACTS_DIR", "artifacts")
 	if err := os.MkdirAll(artifactDir, 0755); err != nil {
 		log.Printf("[CONCIERGE] Failed to create artifacts dir: %v", err)
 	}

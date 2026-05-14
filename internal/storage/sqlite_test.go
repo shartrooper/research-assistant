@@ -96,3 +96,37 @@ func TestSQLiteStore_GetSources(t *testing.T) {
 		t.Errorf("source[2].Snippet: want empty, got %q", got[2].Snippet)
 	}
 }
+
+func TestSQLiteStore_DeleteSession(t *testing.T) {
+	s := newTestStore(t)
+	const sessionID = "delete-me"
+
+	if err := s.CreateSession(sessionID, "Topic"); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if err := s.SaveFindings(sessionID, []event.StructuredFinding{{Finding: "F"}}); err != nil {
+		t.Fatalf("SaveFindings: %v", err)
+	}
+
+	if err := s.DeleteSession(sessionID); err != nil {
+		t.Fatalf("DeleteSession: %v", err)
+	}
+
+	// Verify status is empty (row gone)
+	status, _, err := s.GetSessionStatus(sessionID)
+	if err != nil {
+		t.Fatalf("GetSessionStatus: %v", err)
+	}
+	if status != "" {
+		t.Errorf("expected session to be deleted, but status is %q", status)
+	}
+
+	// Verify findings are gone
+	findings, err := s.GetKeyFindings(sessionID)
+	if err != nil {
+		t.Fatalf("GetKeyFindings: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Errorf("expected findings to be deleted, but got %d", len(findings))
+	}
+}

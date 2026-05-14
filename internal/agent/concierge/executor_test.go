@@ -31,6 +31,8 @@ func (m *mockLLM) GenerateContent(_ context.Context, _ string) (string, error) {
 type mockContextStore struct {
 	findings []event.StructuredFinding
 	sources  []event.SearchSource
+	status   string
+	errMsg   string
 	err      error
 }
 
@@ -40,6 +42,34 @@ func (m *mockContextStore) GetKeyFindings(_ string) ([]event.StructuredFinding, 
 
 func (m *mockContextStore) GetSources(_ string) ([]event.SearchSource, error) {
 	return m.sources, m.err
+}
+
+func (m *mockContextStore) GetSessionStatus(_ string) (string, string, error) {
+	status := m.status
+	if status == "" {
+		status = "complete" // Default to complete for existing tests
+	}
+	return status, m.errMsg, m.err
+}
+
+func (m *mockContextStore) GetSessionArtifacts(_ string) (string, string, error) {
+	return "report.md", "report.json", nil
+}
+
+func (m *mockContextStore) DeleteSession(_ string) error {
+	return nil
+}
+
+type mockBlobStorage struct {
+	deletedKeys []string
+}
+
+func (m *mockBlobStorage) SaveBlob(name string, content []byte, ext string) (string, error) {
+	return name + "." + ext, nil
+}
+func (m *mockBlobStorage) DeleteBlob(key string) error {
+	m.deletedKeys = append(m.deletedKeys, key)
+	return nil
 }
 
 // mockResearcher returns a fixed sequence of A2A events, simulating the Researcher agent.
@@ -160,7 +190,7 @@ func TestConciergeExecutor_RelaysResearcherUpdates(t *testing.T) {
 		},
 	}
 
-	exec := concierge.New(&mockLLM{}, &mockContextStore{}, researcher.Stream, nil)
+	exec := concierge.New(&mockLLM{}, &mockContextStore{}, researcher.Stream, nil, &mockBlobStorage{})
 	q := &recordingQueue{}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -191,14 +221,14 @@ func TestConciergeExecutor_QAModeLoadsContext(t *testing.T) {
 			{Finding: "F1", Confidence: 0.9},
 		},
 		sources: []event.SearchSource{
-			{Query: "q1", URL: "http://a.com", Snippet: "snippet"},
+			{Query: "q1", URL: "https://a.com", Snippet: "snippet"},
 		},
 	}
 	lm := &mockLLM{response: "The answer is 42."}
 
 	researcher := &mockResearcher{} // should NOT be called in Q&A mode
 
-	exec := concierge.New(lm, store, researcher.Stream, nil)
+	exec := concierge.New(lm, store, researcher.Stream, nil, &mockBlobStorage{})
 
 	// Pre-seed the session map so the executor knows context "ctx2" has a completed session.
 	exec.SetSession("ctx2", "session-xyz")
@@ -246,7 +276,7 @@ func TestConciergeExecutor_ResearcherFailure(t *testing.T) {
 		err: fmt.Errorf("researcher: pipeline failed"),
 	}
 
-	exec := concierge.New(&mockLLM{}, &mockContextStore{}, researcher.Stream, nil)
+	exec := concierge.New(&mockLLM{}, &mockContextStore{}, researcher.Stream, nil, &mockBlobStorage{})
 	q := &recordingQueue{}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -263,6 +293,65 @@ func TestConciergeExecutor_ResearcherFailure(t *testing.T) {
 	}
 }
 
+func TestConciergeExecutor_DeleteSession(t *testing.T) {
+	blobs := &mockBlobStorage{}
+	store := &mockContextStore{}
+	exec := concierge.New(&mockLLM{}, store, nil, nil, blobs)
+
+	const contextID = "ctx-delete"
+	const sessionID = "session-delete"
+
+	exec.SetSession(contextID, sessionID)
+
+	ctx := context.Background()
+	if err := exec.DeleteSession(ctx, contextID); err != nil {
+		t.Fatalf("DeleteSession returned error: %v", err)
+	}
+
+	// Verify blobs deleted
+	foundMD := false
+	foundJSON := false
+	for _, k := range blobs.deletedKeys {
+		if k == "report.md" {
+			foundMD = true
+		}
+		if k == "report.json" {
+			foundJSON = true
+		}
+	}
+	if !foundMD || !foundJSON {
+		t.Errorf("expected MD and JSON blobs to be deleted; got: %v", blobs.deletedKeys)
+	}
+
+	// Verify in-memory state cleared
+	researcherCalled := false
+	researcher := func(ctx context.Context, topic string, contextID string) iter.Seq2[a2a.Event, error] {
+		researcherCalled = true
+		return func(yield func(a2a.Event, error) bool) {}
+	}
+
+	exec = concierge.New(&mockLLM{}, store, researcher, nil, blobs)
+	// We don't call SetSession this time.
+	// But wait, the previous 'exec' was already cleaned up.
+	// Let's just use the same 'exec' and set a new researcher.
+	// We need a way to set the researcher on the existing executor or just use a new one for this part.
+
+	exec.SetSession(contextID, sessionID)
+	if err := exec.DeleteSession(ctx, contextID); err != nil {
+		t.Fatalf("DeleteSession (2nd) failed: %v", err)
+	}
+
+	q := &recordingQueue{}
+	req := makeReqCtx(contextID, "New Topic")
+	if err := exec.Execute(ctx, req, q); err != nil {
+		t.Fatalf("Execute after delete returned error: %v", err)
+	}
+
+	if !researcherCalled {
+		t.Error("expected researcher to be called after session deletion (should have entered research mode)")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Handler stack tests (table-driven)
 //
@@ -275,7 +364,7 @@ func TestConciergeExecutor_ResearcherFailure(t *testing.T) {
 
 // newHandlerWithResearcher wires up a concierge executor inside the real a2asrv handler stack.
 func newHandlerWithResearcher(researcher *mockResearcher) a2asrv.RequestHandler {
-	exec := concierge.New(&mockLLM{response: "answer"}, &mockContextStore{}, researcher.Stream, nil)
+	exec := concierge.New(&mockLLM{response: "answer"}, &mockContextStore{}, researcher.Stream, nil, &mockBlobStorage{})
 	return a2asrv.NewHandler(exec)
 }
 
@@ -396,7 +485,7 @@ func TestHandlerStack_SendMessageStream(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Each sub-test gets its own handler with a fresh in-memory task store.
+			// Each subtest gets its own handler with a fresh in-memory task store.
 			handler := newHandlerWithResearcher(tc.researcher)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
