@@ -72,6 +72,13 @@ func (p *Pipeline) RunWithUpdates(ctx context.Context, sessionID, topic string, 
 	}
 	queries := extractJSONStringArray(rawQueries)
 	if len(queries) == 0 {
+		// If LLM didn't return JSON, it might be an error message or refusal.
+		// We should check if it looks like a refusal or just use the topic.
+		if strings.Contains(strings.ToLower(rawQueries), "cannot") ||
+			strings.Contains(strings.ToLower(rawQueries), "disallowed") ||
+			strings.Contains(strings.ToLower(rawQueries), "unsafe") {
+			return fail(fmt.Sprintf("Topic validation failed: %s", rawQueries), fmt.Errorf("disallowed topic"))
+		}
 		queries = []string{topic}
 	}
 
@@ -162,34 +169,32 @@ Sources:
 	}
 	structured.SessionID = sessionID
 
-	// 5. Generate report and summary (skip if structured carries an error).
+	if strings.TrimSpace(structured.Error) != "" {
+		return fail(fmt.Sprintf("Research blocked: %s", structured.Error), fmt.Errorf("structured error: %s", structured.Error))
+	}
+
+	// 5. Generate report and summary.
 	onUpdate("writing_report", "")
 	_ = p.db.UpdateSessionStatus(sessionID, "writing_report", "")
 
 	var report, summary string
-	if strings.TrimSpace(structured.Error) != "" {
-		msg := fmt.Sprintf("Unable to perform research for this topic: %s", structured.Error)
-		report = msg
-		summary = msg
-	} else {
-		structuredJSON, _ := json.MarshalIndent(structured, "", "  ")
-		reportPrompt := fmt.Sprintf(`You are a research assistant. Write a comprehensive report based only on the structured data below.
+	structuredJSON, _ := json.MarshalIndent(structured, "", "  ")
+	reportPrompt := fmt.Sprintf(`You are a research assistant. Write a comprehensive report based only on the structured data below.
 Include key insights, challenges, and a conclusion.
 Structured Data:
 %s`, string(structuredJSON))
 
-		report, err = p.llm.GenerateContent(ctx, reportPrompt)
-		if err != nil {
-			return fail(fmt.Sprintf("generate report: %v", err), err)
-		}
+	report, err = p.llm.GenerateContent(ctx, reportPrompt)
+	if err != nil {
+		return fail(fmt.Sprintf("generate report: %v", err), err)
+	}
 
-		summaryPrompt := fmt.Sprintf(`Create a short executive summary (3-5 bullet points) for the following report. Return plain text bullets.
+	summaryPrompt := fmt.Sprintf(`Create a short executive summary (3-5 bullet points) for the following report. Return plain text bullets.
 Report:
 %s`, report)
-		summary, err = p.llm.GenerateContent(ctx, summaryPrompt)
-		if err != nil {
-			summary = "Executive summary unavailable due to generation error."
-		}
+	summary, err = p.llm.GenerateContent(ctx, summaryPrompt)
+	if err != nil {
+		summary = "Executive summary unavailable due to generation error."
 	}
 
 	fullReport := fmt.Sprintf("RESEARCH REPORT\n===============\n%s", report)

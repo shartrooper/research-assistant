@@ -158,7 +158,16 @@ func (e *Executor) handleResearch(ctx context.Context, reqCtx *a2asrv.RequestCon
 				for ev := range eventCh {
 					msg := fmt.Sprintf("%v", ev.Data)
 					log.Printf("[CONCIERGE] %s relaying Redis event to A2A: %s", reqCtx.ContextID, ev.Type)
-					_ = agent.WriteStatus(ctx, reqCtx, queue, a2a.TaskStateWorking, msg, false)
+					state := a2a.TaskStateWorking
+					final := false
+					if ev.Type == event.TypeError {
+						state = a2a.TaskStateFailed
+						final = true
+					}
+					_ = agent.WriteStatus(ctx, reqCtx, queue, state, msg, final)
+					if final {
+						return
+					}
 				}
 			}()
 		}
@@ -208,8 +217,15 @@ func (e *Executor) handleResearch(ctx context.Context, reqCtx *a2asrv.RequestCon
 			}
 			return nil
 		}
-		if status.State == a2a.TaskStateFailed || status.State == a2a.TaskStateCanceled {
-			return nil
+		if status.State == a2a.TaskStateFailed {
+			msg := "research failed"
+			if status.Message != nil {
+				msg = agent.ExtractText(status.Message)
+			}
+			return fmt.Errorf("research failed: %s", msg)
+		}
+		if status.State == a2a.TaskStateCanceled {
+			return fmt.Errorf("research canceled")
 		}
 	}
 	return nil

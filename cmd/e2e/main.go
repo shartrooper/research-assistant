@@ -161,11 +161,15 @@ func main() {
 			log.Printf("[E2E] Researcher stream closed")
 		}
 	}
-	conExec := concierge.New(llm, db, researchStream, ps)
+	artifactDir := "data/e2e_artifacts"
+	_ = os.MkdirAll(artifactDir, 0755)
+	blobStore, _ := storage.NewDiskBlobStore(artifactDir)
+
+	conExec := concierge.New(llm, db, researchStream, ps, blobStore)
 	conListener, _ := net.Listen("tcp", "127.0.0.1:0")
 	conWSAddr := "ws://" + conListener.Addr().String() + "/ws"
 	mux := http.NewServeMux()
-	mux.HandleFunc("/ws", concierge.HandleWebSocket(a2asrv.NewHandler(conExec), ps))
+	mux.HandleFunc("/ws", concierge.HandleWebSocket(a2asrv.NewHandler(conExec), ps, conExec))
 	conSrv := &http.Server{Handler: mux}
 	go func() {
 		err := conSrv.Serve(conListener)
