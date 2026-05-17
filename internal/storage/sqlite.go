@@ -12,7 +12,12 @@ import (
 )
 
 //go:embed migrations/000001_initial_schema.up.sql
-var schemaSQL string
+var baseSchema string
+
+//go:embed migrations/000002_add_summary.up.sql
+var addSummarySQL string
+
+var schemaSQL = baseSchema + "\n" + addSummarySQL
 
 // StructuredStorage defines the interface for storing structured research data
 type StructuredStorage interface {

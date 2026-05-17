@@ -226,12 +226,37 @@ Report:
 
 	// 7. Persist structured data to DB.
 	var wg sync.WaitGroup
+	var dbErrors []string
+	var dbMu sync.Mutex
+	addDbErr := func(op string, err error) {
+		if err != nil {
+			dbMu.Lock()
+			dbErrors = append(dbErrors, fmt.Sprintf("%s: %v", op, err))
+			dbMu.Unlock()
+		}
+	}
+
 	wg.Add(3)
-	go func() { defer wg.Done(); _ = p.db.SaveFindings(sessionID, structured.KeyFindings) }()
-	go func() { defer wg.Done(); _ = p.db.SaveOpenQuestions(sessionID, structured.OpenQuestions) }()
-	go func() { defer wg.Done(); _ = p.db.SaveSources(sessionID, structured.Sources) }()
+	go func() {
+		defer wg.Done()
+		addDbErr("SaveFindings", p.db.SaveFindings(sessionID, structured.KeyFindings))
+	}()
+	go func() {
+		defer wg.Done()
+		addDbErr("SaveOpenQuestions", p.db.SaveOpenQuestions(sessionID, structured.OpenQuestions))
+	}()
+	go func() { defer wg.Done(); addDbErr("SaveSources", p.db.SaveSources(sessionID, structured.Sources)) }()
 	wg.Wait()
-	_ = p.db.MarkSessionComplete(sessionID, reportMDKey, reportJSONKey, summary)
+
+	if err := p.db.MarkSessionComplete(sessionID, reportMDKey, reportJSONKey, summary); err != nil {
+		addDbErr("MarkSessionComplete", err)
+	}
+
+	if len(dbErrors) > 0 {
+		log.Printf("[PIPELINE] %s DB persistence errors: %s", sessionID, strings.Join(dbErrors, "; "))
+		// We still consider it a "complete" status for the user if artifacts are safe,
+		// but the Q&A might be degraded.
+	}
 
 	onUpdate("complete", reportMDKey)
 	return &Result{SessionID: sessionID, ReportMDKey: reportMDKey, ReportJSONKey: reportJSONKey}, nil
