@@ -66,7 +66,7 @@ topic
 
 | Concern | Choice |
 |---|---|
-| Language | Go 1.24 |
+| Language | Go 1.26+ |
 | Agent protocol | [A2A](https://github.com/a2aproject/a2a-go) v0.3.7 (JSON-RPC over HTTP) |
 | Orchestrator | BeeAI |
 | LLM | Gemini 2.5 Flash (via `google/generative-ai-go`) |
@@ -105,7 +105,7 @@ artifacts/        — Report blobs (created at runtime)
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.26+
 - API keys: Gemini, Google Custom Search (CSE key + CX)
 
 ### Environment variables
@@ -174,7 +174,7 @@ Each agent exposes its capabilities at:
 
 | Table | Contents |
 |---|---|
-| `research_sessions` | One row per topic; tracks status and blob keys |
+| `research_sessions` | One row per topic; tracks status, summary, and blob keys |
 | `key_findings` | Structured findings with confidence scores |
 | `open_questions` | Unresolved questions identified during research |
 | `sources` | Web sources (query, URL, snippet) |
