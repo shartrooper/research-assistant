@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/user/research-assistant/internal/event"
@@ -49,14 +50,24 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("ping sqlite: %w", err)
 	}
 
-	// Schema uses IF NOT EXISTS so this is safe to run on existing databases.
 	_ = isNew
-	if _, err := db.Exec(schemaSQL); err != nil {
-		err := db.Close()
-		if err != nil {
-			return nil, err
+	if _, err := db.Exec(baseSchema); err != nil {
+		closeErr := db.Close()
+		if closeErr != nil {
+			return nil, fmt.Errorf("apply base schema error: %v, close error: %v", err, closeErr)
 		}
-		return nil, fmt.Errorf("apply schema: %w", err)
+		return nil, fmt.Errorf("apply base schema: %w", err)
+	}
+
+	// Add summary column if it doesn't exist
+	if _, err := db.Exec(addSummarySQL); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column name") {
+			closeErr := db.Close()
+			if closeErr != nil {
+				return nil, fmt.Errorf("apply migration error: %v, close error: %v", err, closeErr)
+			}
+			return nil, fmt.Errorf("apply migration: %w", err)
+		}
 	}
 
 	return &SQLiteStore{db: db}, nil
