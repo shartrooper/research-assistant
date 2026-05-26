@@ -1,0 +1,9 @@
+.git
+.idea
+.vscode
+.env
+data/
+artifacts/
+temp/
+bin/
+e2e_research.db
