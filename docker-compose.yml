@@ -16,6 +16,10 @@ services:
     environment:
       - REDIS_ADDR=redis:6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - CSE_API_KEY=${CSE_API_KEY}
+      - CSE_CX=${CSE_CX}
     depends_on:
       - redis
 
@@ -29,5 +33,9 @@ services:
     environment:
       - REDIS_ADDR=redis:6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - CSE_API_KEY=${CSE_API_KEY}
+      - CSE_CX=${CSE_CX}
     depends_on:
       - redis
