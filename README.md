@@ -125,7 +125,15 @@ RESEARCHER_URL=http://localhost:8081
 
 ### Run
 
-Start both agents (each in its own terminal):
+You can run the entire system (including the Redis dependency) via Docker Compose:
+
+```bash
+docker-compose up --build
+```
+> [!NOTE]
+> When running via Docker Compose, the internal `redis` container is used automatically as the hostname (via `REDIS_ADDR=redis:6379`).
+
+Alternatively, to run the agents manually (ensure Redis is already running on `localhost:6379`):
 
 ```bash
 go run ./cmd/researcher

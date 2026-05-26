@@ -6,3 +6,28 @@ services:
     environment:
       - REDIS_PASSWORD
     command: redis-server --requirepass ${REDIS_PASSWORD}
+
+  concierge:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    # The default ENTRYPOINT in your Dockerfile is already ["./concierge"]
+    # Add your required environment variables here
+    environment:
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    depends_on:
+      - redis
+
+  researcher:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    # Override the entrypoint to run the researcher binary instead
+    entrypoint: ["./researcher"]
+    # Add your required environment variables here
+    environment:
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    depends_on:
+      - redis
