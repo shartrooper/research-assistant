@@ -4,8 +4,8 @@ services:
     ports:
       - "6379:6379"
     environment:
-      - REDIS_PASSWORD
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-secret}
+    command: redis-server --requirepass ${REDIS_PASSWORD:-secret}
 
   concierge:
     build: 
@@ -15,7 +15,7 @@ services:
     # Add your required environment variables here
     environment:
       - REDIS_ADDR=redis:6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-secret}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - TAVILY_API_KEY=${TAVILY_API_KEY}
       - CSE_API_KEY=${CSE_API_KEY}
@@ -32,7 +32,7 @@ services:
     # Add your required environment variables here
     environment:
       - REDIS_ADDR=redis:6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-secret}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - TAVILY_API_KEY=${TAVILY_API_KEY}
       - CSE_API_KEY=${CSE_API_KEY}
