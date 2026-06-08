@@ -137,7 +137,17 @@ func main() {
 	if err := os.MkdirAll(artifactDir, 0755); err != nil {
 		log.Printf("[CONCIERGE] Failed to create artifacts dir: %v", err)
 	}
-	mux.Handle("/artifacts/", http.StripPrefix("/artifacts/", http.FileServer(http.Dir(artifactDir))))
+	fileServer := http.FileServer(http.Dir(artifactDir))
+	mux.HandleFunc("/artifacts/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.StripPrefix("/artifacts/", fileServer).ServeHTTP(w, r)
+	})
 
 	srv := &http.Server{Addr: addr, Handler: mux}
 	go func() {
